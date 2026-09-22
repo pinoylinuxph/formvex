@@ -10,5 +10,5 @@ $environment = $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'prod';
 $environmentFile = dirname(__DIR__, 3) . '/.env.' . $environment;
 
 if (is_file($environmentFile)) {
-    (new Dotenv())->usePutenv()->load($environmentFile);
+    new Dotenv()->usePutenv()->load($environmentFile);
 }

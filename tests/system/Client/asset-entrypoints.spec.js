@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-test('the production website-client entry point loads without a browser error', async ({ page }) => {
+test('the production website-client entry point loads without a browser error', async ({
+  page,
+}) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -10,7 +12,9 @@ test('the production website-client entry point loads without a browser error', 
     return module.clientPackage;
   });
 
-  await expect(page.getByRole('heading', { name: 'Formvex structural asset fixture' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Formvex structural asset fixture' }),
+  ).toBeVisible();
   expect(packageName).toBe('@formvex/client');
   expect(pageErrors).toEqual([]);
 });
