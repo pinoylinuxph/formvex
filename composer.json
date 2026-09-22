@@ -6,7 +6,12 @@
   "require": {
     "php": ">=8.4 <8.6",
     "ext-ctype": "*",
+    "ext-curl": "*",
     "ext-iconv": "*",
+    "ext-mbstring": "*",
+    "ext-openssl": "*",
+    "ext-pdo_sqlite": "*",
+    "ext-sodium": "*",
     "symfony/cache": "7.4.*",
     "symfony/config": "7.4.*",
     "symfony/console": "7.4.*",
@@ -33,6 +38,7 @@
   "autoload": {
     "psr-4": {
       "Formvex\\Spoke\\": "apps/spoke/src/",
+      "Formvex\\Spoke\\Migrations\\": "apps/spoke/migrations/",
       "Formvex\\Hub\\": "apps/hub/src/",
       "Formvex\\Core\\": "packages/core/src/",
       "Formvex\\Contracts\\": "packages/contracts/src/"

@@ -26,5 +26,8 @@
         <testsuite name="repository-security">
             <directory>tests/system/Security</directory>
         </testsuite>
+        <testsuite name="spoke-system">
+            <directory>tests/system/Spoke</directory>
+        </testsuite>
     </testsuites>
 </phpunit>

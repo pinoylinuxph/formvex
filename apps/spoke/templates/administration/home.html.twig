@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Formvex administration</title>
+</head>
+<body>
+<main>
+    <h1>Formvex administration</h1>
+    <p>You are signed in as the local administrator.</p>
+    <form method="post" action="{{ path('spoke_admin_logout') }}">
+        <input type="hidden" name="_token" value="{{ csrfToken }}">
+        <button type="submit">Sign out</button>
+    </form>
+</main>
+</body>
+</html>

@@ -7,3 +7,19 @@ services:
         resource: '../src/'
         exclude:
             - '../src/Kernel.php'
+
+    Formvex\Spoke\Migrations\Version000001CreateInstallationMetadata:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000002CreateLocalAdministratorAuth:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration:
+        arguments:
+            $applicationRoot: '%env(string:FORMVEX_APPLICATION_ROOT)%'
+
+    Formvex\Spoke\Infrastructure\Security\LoginCsrfTokenManager:
+        arguments:
+            $applicationSecret: '%env(string:FORMVEX_SPOKE_APP_SECRET)%'

@@ -1,1 +1,3 @@
-# Unit 01 intentionally defines no product or placeholder routes.
+controllers:
+    resource: '../src/Admin/'
+    type: attribute
