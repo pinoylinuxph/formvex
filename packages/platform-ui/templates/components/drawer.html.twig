@@ -1,0 +1,9 @@
+<aside class="fv-drawer" id="{{ drawerId }}" aria-labelledby="{{ drawerId }}-title" hidden>
+    <header class="fv-drawer-header">
+        <h2 id="{{ drawerId }}-title">{{ title }}</h2>
+        <button class="fv-icon-button" type="button" data-drawer-close aria-label="Close panel">×</button>
+    </header>
+    <div class="fv-drawer-body">
+        {% block drawer_body %}{% endblock %}
+    </div>
+</aside>

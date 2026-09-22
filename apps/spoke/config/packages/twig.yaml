@@ -1,3 +1,5 @@
 twig:
     default_path: '%kernel.project_dir%/templates'
+    paths:
+        '%kernel.project_dir%/../../packages/platform-ui/templates': platform_ui
     strict_variables: true

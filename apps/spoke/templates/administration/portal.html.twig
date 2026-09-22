@@ -1,0 +1,57 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}{{ pageTitle }} · Formvex{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    {% if not isOverview %}
+        <nav class="fv-breadcrumbs" aria-label="Breadcrumbs">
+            <a href="{{ path('spoke_admin_home') }}">Overview</a>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page">{{ pageTitle }}</span>
+        </nav>
+    {% endif %}
+
+    {% include '@platform_ui/components/page_header.html.twig' with {
+        pageTitle: pageTitle,
+        pageDescription: pageDescription,
+    } only %}
+
+    {% include '@platform_ui/components/feedback.html.twig' with {
+        message: null,
+        variant: 'information',
+    } only %}
+
+    {% if isOverview %}
+        <section class="fv-overview-grid" aria-label="Portal status">
+            <article class="fv-card">
+                <p class="fv-eyebrow">Portal state</p>
+                <h2>Shell ready</h2>
+                <p>The authenticated local portal foundation is available for the next approved feature units.</p>
+            </article>
+            <article class="fv-card">
+                <p class="fv-eyebrow">Theme</p>
+                <h2>{{ currentTheme|capitalize }}</h2>
+                <p>Use the theme control in the top navigation to switch between light and dark.</p>
+            </article>
+            <article class="fv-card">
+                <p class="fv-eyebrow">Navigation</p>
+                <h2>{{ navItems|length }} areas</h2>
+                <p>Each approved local Spoke destination has a protected shell route.</p>
+            </article>
+        </section>
+        <section class="fv-panel fv-panel-compact" aria-labelledby="overview-next-heading">
+            <p class="fv-eyebrow">Implementation status</p>
+            <h2 id="overview-next-heading">Feature data will appear here</h2>
+            <p>The navigation and shared interface foundations are in place. Later units will connect forms, submissions, delivery, diagnostics, maintenance, and settings to their authoritative data.</p>
+        </section>
+    {% else %}
+        {% include '@platform_ui/components/empty_state.html.twig' with {
+            eyebrow: 'Feature area',
+            headingId: 'destination-empty-heading',
+            title: 'This area is ready for implementation',
+            message: 'The shell and navigation are available. The feature behavior for this area belongs to a later approved unit.',
+        } only %}
+    {% endif %}
+</div>
+{% endblock %}

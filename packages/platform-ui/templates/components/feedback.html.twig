@@ -1,0 +1,6 @@
+{% if message is not empty %}
+    <div class="fv-alert fv-alert-{{ variant|default('information') }}" role="{{ variant == 'danger' ? 'alert' : 'status' }}">
+        <strong>{{ title|default('Notice') }}</strong>
+        <span>{{ message }}</span>
+    </div>
+{% endif %}

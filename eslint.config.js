@@ -19,8 +19,13 @@ export default [
       sourceType: 'module',
       globals: {
         document: 'readonly',
+        fetch: 'readonly',
+        FormData: 'readonly',
+        HTMLButtonElement: 'readonly',
+        HTMLElement: 'readonly',
         process: 'readonly',
         URL: 'readonly',
+        window: 'readonly',
       },
     },
     rules: {

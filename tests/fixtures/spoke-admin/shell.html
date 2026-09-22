@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/build/formvex-ui.css" />
+  </head>
+  <body class="fv-app" data-sidebar-state="expanded">
+    <button type="button" data-sidebar-open aria-controls="fv-sidebar" aria-expanded="false">
+      Open navigation
+    </button>
+    <button type="button" data-theme-toggle>Theme: <span data-theme-label>Light</span></button>
+    <div class="fv-sidebar-backdrop" data-sidebar-backdrop hidden></div>
+    <aside id="fv-sidebar" class="fv-sidebar" aria-label="Primary navigation" data-sidebar>
+      <button type="button" data-sidebar-close aria-label="Close navigation">
+        Close navigation
+      </button>
+      <button type="button" data-sidebar-toggle aria-controls="fv-sidebar" aria-expanded="true">
+        Collapse navigation
+      </button>
+      <nav aria-label="Local Spoke">
+        <a href="/formvex">Overview</a>
+        <a href="/formvex/forms">Forms</a>
+      </nav>
+    </aside>
+    <main id="main-content">Shell fixture</main>
+    <script type="module" src="/build/spoke-admin.js"></script>
+  </body>
+</html>

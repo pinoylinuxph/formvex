@@ -127,6 +127,146 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertSame('/formvex/login', $revokedHome->headers->get('Location'));
     }
 
+    public function testEveryPortalDestinationUsesTheProtectedResponsiveShell(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $destinations = [
+            '/formvex',
+            '/formvex/forms',
+            '/formvex/submissions',
+            '/formvex/delivery',
+            '/formvex/diagnostics',
+            '/formvex/maintenance',
+            '/formvex/settings',
+        ];
+
+        foreach ($destinations as $destination) {
+            $response = $this->request('GET', $destination, [], [
+                'formvex_session' => $session,
+                'formvex_admin_csrf' => $csrf,
+            ]);
+
+            self::assertSame(Response::HTTP_OK, $response->getStatusCode(), $destination);
+            self::assertStringContainsString('Primary navigation', $response->getContent(), $destination);
+            self::assertStringContainsString('Local Spoke', $response->getContent(), $destination);
+            self::assertStringContainsString('data-theme="light"', $response->getContent(), $destination);
+        }
+
+        $darkPreference = $this->request(
+            'POST',
+            '/formvex/preferences/theme',
+            [
+                '_token' => $csrf,
+                'theme' => 'dark',
+                'return_route' => 'spoke_admin_forms',
+            ],
+            [
+                'formvex_session' => $session,
+                'formvex_admin_csrf' => $csrf,
+            ],
+        );
+
+        self::assertSame(Response::HTTP_FOUND, $darkPreference->getStatusCode());
+        self::assertSame('/formvex/forms', $darkPreference->headers->get('Location'));
+        $themeCookie = $this->cookie($darkPreference, 'formvex_theme');
+        self::assertSame('dark', $themeCookie->getValue());
+        self::assertTrue($themeCookie->isSecure());
+        self::assertFalse($themeCookie->isHttpOnly());
+        self::assertSame(Cookie::SAMESITE_LAX, $themeCookie->getSameSite());
+        self::assertSame('/formvex', $themeCookie->getPath());
+
+        $darkPage = $this->request('GET', '/formvex/forms', [], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+            'formvex_theme' => 'dark',
+        ]);
+        self::assertSame(Response::HTTP_OK, $darkPage->getStatusCode());
+        self::assertStringContainsString('data-theme="dark"', $darkPage->getContent());
+        self::assertStringContainsString('aria-current="page"', $darkPage->getContent());
+    }
+
+    public function testPortalDestinationsRemainProtectedAndInvalidThemeRequestsAreRejected(): void
+    {
+        foreach (['/formvex', '/formvex/forms', '/formvex/settings'] as $destination) {
+            $response = $this->request('GET', $destination);
+
+            self::assertSame(Response::HTTP_FOUND, $response->getStatusCode(), $destination);
+            self::assertSame('/formvex/login', $response->headers->get('Location'), $destination);
+        }
+
+        [$session, $csrf] = $this->authenticateAdministrator();
+
+        $invalidCsrf = $this->request(
+            'POST',
+            '/formvex/preferences/theme',
+            [
+                '_token' => 'invalid-token',
+                'theme' => 'dark',
+                'return_route' => 'spoke_admin_home',
+            ],
+            [
+                'formvex_session' => $session,
+                'formvex_admin_csrf' => $csrf,
+            ],
+        );
+        self::assertSame(Response::HTTP_BAD_REQUEST, $invalidCsrf->getStatusCode());
+
+        $invalidRoute = $this->request(
+            'POST',
+            '/formvex/preferences/theme',
+            [
+                '_token' => $csrf,
+                'theme' => 'dark',
+                'return_route' => 'unsafe_external_route',
+            ],
+            [
+                'formvex_session' => $session,
+                'formvex_admin_csrf' => $csrf,
+            ],
+        );
+        self::assertSame(Response::HTTP_BAD_REQUEST, $invalidRoute->getStatusCode());
+        self::assertCount(0, array_filter(
+            $invalidRoute->headers->getCookies(),
+            static fn (Cookie $cookie): bool => $cookie->getName() === 'formvex_theme',
+        ));
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function authenticateAdministrator(): array
+    {
+        $loginPage = $this->request('GET', '/formvex/login');
+        $loginCsrf = $this->cookieValue($loginPage, 'formvex_login_csrf');
+        $login = $this->request(
+            'POST',
+            '/formvex/login',
+            [
+                'login_identifier' => 'admin',
+                'password' => $this->temporaryPassword,
+                '_token' => $loginCsrf,
+            ],
+            ['formvex_login_csrf' => $loginCsrf],
+        );
+        $session = $this->cookieValue($login, 'formvex_session');
+        $csrf = $this->cookieValue($login, 'formvex_admin_csrf');
+        $change = $this->request(
+            'POST',
+            '/formvex/password/change',
+            [
+                'new_password' => 'correct horse battery staple',
+                'confirmation' => 'correct horse battery staple',
+                '_token' => $csrf,
+            ],
+            [
+                'formvex_session' => $session,
+                'formvex_admin_csrf' => $csrf,
+            ],
+        );
+
+        return [$this->cookieValue($change, 'formvex_session'), $this->cookieValue($change, 'formvex_admin_csrf')];
+    }
+
     /**
      * @param array<string, string> $parameters
      * @param array<string, string> $cookies

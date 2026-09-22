@@ -1,28 +1,30 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Formvex administrator sign in</title>
-</head>
-<body>
-<main>
-    <h1>Formvex administrator sign in</h1>
+{% extends 'administration/auth_layout.html.twig' %}
+
+{% block title %}Formvex administrator sign in{% endblock %}
+
+{% block content %}
+    <header class="fv-auth-title">
+        <p class="fv-eyebrow">Local administrator portal</p>
+        <h1>Sign in to Formvex</h1>
+        <p>Manage this website's local form-processing installation.</p>
+    </header>
     {% if error %}
-        <p role="alert">{{ error }}</p>
+        {% include '@platform_ui/components/feedback.html.twig' with {
+            message: error,
+            title: 'Sign-in failed',
+            variant: 'danger',
+        } only %}
     {% endif %}
-    <form method="post" action="{{ path('spoke_admin_login') }}">
+    <form class="fv-form" method="post" action="{{ path('spoke_admin_login') }}">
         <input type="hidden" name="_token" value="{{ csrfToken }}">
-        <p>
+        <div class="fv-field">
             <label for="login-identifier">Login identifier</label>
-            <input id="login-identifier" name="login_identifier" type="text" value="admin" autocomplete="username" required>
-        </p>
-        <p>
+            <input class="fv-input" id="login-identifier" name="login_identifier" type="text" value="admin" autocomplete="username" required>
+        </div>
+        <div class="fv-field">
             <label for="password">Password</label>
-            <input id="password" name="password" type="password" autocomplete="current-password" required>
-        </p>
-        <button type="submit">Sign in</button>
+            <input class="fv-input" id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="fv-button fv-button-primary fv-button-block" type="submit">Sign in</button>
     </form>
-</main>
-</body>
-</html>
+{% endblock %}

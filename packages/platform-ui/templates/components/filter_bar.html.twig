@@ -1,0 +1,14 @@
+<form class="fv-filter-bar" method="get" action="{{ action }}">
+    {% for field in fields %}
+        <div class="fv-filter-field">
+            <label for="{{ field.id }}">{{ field.label }}</label>
+            <input class="fv-input" id="{{ field.id }}" name="{{ field.name }}" type="search" value="{{ field.value|default('') }}"{% if field.placeholder is defined %} placeholder="{{ field.placeholder }}"{% endif %}>
+        </div>
+    {% endfor %}
+    <div class="fv-filter-actions">
+        <button class="fv-button fv-button-primary" type="submit">Apply filters</button>
+        {% if clearHref is defined %}
+            <a class="fv-button fv-button-secondary" href="{{ clearHref }}">Clear filters</a>
+        {% endif %}
+    </div>
+</form>

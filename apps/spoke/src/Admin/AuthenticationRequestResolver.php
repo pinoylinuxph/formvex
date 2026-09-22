@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Formvex\Spoke\Admin;
 
+use Formvex\Spoke\Admin\Portal\ThemePreferenceRequest;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -36,6 +37,17 @@ final class AuthenticationRequestResolver
         $payload = $this->payload($request, ['_token']);
 
         return $this->stringValue($payload, '_token');
+    }
+
+    public function themePreference(Request $request): ThemePreferenceRequest
+    {
+        $payload = $this->payload($request, ['_token', 'theme', 'return_route']);
+
+        return new ThemePreferenceRequest(
+            $this->stringValue($payload, '_token'),
+            $this->stringValue($payload, 'theme'),
+            $this->stringValue($payload, 'return_route'),
+        );
     }
 
     /**

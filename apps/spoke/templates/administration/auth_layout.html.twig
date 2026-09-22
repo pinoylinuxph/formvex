@@ -1,0 +1,40 @@
+{% set currentTheme = theme|default('light') %}
+<!doctype html>
+<html lang="en" data-theme="{{ currentTheme }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+        (() => {
+            const root = document.documentElement;
+            const saved = document.cookie.split('; ').find((item) => item.startsWith('formvex_theme='))?.split('=')[1];
+            const preferred = saved === 'light' || saved === 'dark'
+                ? saved
+                : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            root.dataset.theme = preferred;
+            root.style.colorScheme = preferred;
+        })();
+    </script>
+    <link rel="stylesheet" href="/build/formvex-ui.css">
+    <script type="module" src="/build/spoke-admin.js" defer></script>
+    <title>{% block title %}Formvex administrator{% endblock %}</title>
+</head>
+<body class="fv-auth-body">
+<a class="fv-skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" class="fv-auth-main">
+    <div class="fv-auth-panel">
+        <header class="fv-auth-header">
+            <a class="fv-brand" href="{{ path('spoke_admin_login') }}" aria-label="Formvex administrator sign in">
+                <span class="fv-brand-mark" aria-hidden="true">F</span>
+                <span class="fv-brand-wordmark">Formvex</span>
+            </a>
+            {% include '@platform_ui/components/theme_control.html.twig' with {
+                authenticated: false,
+                theme: currentTheme,
+            } only %}
+        </header>
+        {% block content %}{% endblock %}
+    </div>
+</main>
+</body>
+</html>

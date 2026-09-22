@@ -12,6 +12,7 @@ export default defineConfig({
         'spoke-admin': resolve(import.meta.dirname, 'apps/spoke/assets/app.js'),
         'hub-platform': resolve(import.meta.dirname, 'apps/hub/assets/app.js'),
       },
+      cssFileName: 'formvex-ui',
       formats: ['es'],
     },
     outDir: 'build',

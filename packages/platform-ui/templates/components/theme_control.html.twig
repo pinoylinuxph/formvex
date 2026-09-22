@@ -1,0 +1,15 @@
+{% if authenticated %}
+    <form class="fv-theme-form" method="post" action="{{ path('spoke_admin_theme') }}" data-theme-form>
+        <input type="hidden" name="_token" value="{{ csrfToken }}">
+        <input type="hidden" name="return_route" value="{{ currentRoute }}">
+        <button class="fv-theme-control" type="submit" name="theme" value="{{ theme == 'dark' ? 'light' : 'dark' }}" data-theme-toggle>
+            <span class="fv-theme-control-label">Theme:</span>
+            <span data-theme-label>{{ theme|capitalize }}</span>
+        </button>
+    </form>
+{% else %}
+    <button class="fv-theme-control" type="button" data-theme-toggle>
+        <span class="fv-theme-control-label">Theme:</span>
+        <span data-theme-label>{{ theme|capitalize }}</span>
+    </button>
+{% endif %}

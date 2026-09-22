@@ -1,0 +1,25 @@
+<div class="fv-table-container" tabindex="0" aria-label="{{ caption }}">
+    <table class="fv-table">
+        <caption class="fv-visually-hidden">{{ caption }}</caption>
+        <thead>
+        <tr>
+            {% for header in headers %}
+                <th scope="col">{{ header }}</th>
+            {% endfor %}
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in rows %}
+            <tr>
+                {% for cell in row %}
+                    <td>{{ cell }}</td>
+                {% endfor %}
+            </tr>
+        {% else %}
+            <tr>
+                <td colspan="{{ headers|length }}">{{ emptyMessage|default('No records found.') }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

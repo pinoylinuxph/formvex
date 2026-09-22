@@ -1,0 +1,8 @@
+<section class="fv-empty-state" aria-labelledby="{{ headingId|default('empty-state-heading') }}">
+    <p class="fv-eyebrow">{{ eyebrow|default('Ready for the next step') }}</p>
+    <h2 id="{{ headingId|default('empty-state-heading') }}">{{ title }}</h2>
+    <p>{{ message }}</p>
+    {% if actionLabel is defined and actionHref is defined %}
+        <a class="fv-button fv-button-secondary" href="{{ actionHref }}">{{ actionLabel }}</a>
+    {% endif %}
+</section>

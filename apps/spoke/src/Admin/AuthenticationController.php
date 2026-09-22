@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Formvex\Spoke\Admin;
 
+use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
@@ -11,7 +12,6 @@ use Formvex\Spoke\Infrastructure\Security\LoginCsrfTokenManager;
 use InvalidArgumentException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Cookie;
-use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -73,32 +73,9 @@ final class AuthenticationController extends AbstractController
         $response = $this->render('administration/login.html.twig', [
             'csrfToken' => $loginCsrfToken,
             'error' => null,
+            'theme' => PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE)),
         ]);
         $response->headers->setCookie($this->cookie(self::LOGIN_CSRF_COOKIE, $loginCsrfToken));
-
-        return $response;
-    }
-
-    #[Route('/formvex', name: 'spoke_admin_home', methods: ['GET'])]
-    public function home(Request $request): Response
-    {
-        $sessionId = $this->sessionId($request);
-        $session = $sessionId === null ? null : $this->administratorService->session($this->runtimeConfiguration->applicationRoot, $sessionId);
-
-        if ($session === null) {
-            return $this->redirectToRoute('spoke_admin_login');
-        }
-
-        if ($session->mustChangePassword) {
-            return $this->redirectToRoute('spoke_admin_password_change');
-        }
-
-        $csrfToken = $this->csrfToken($request, $sessionId);
-        $response = $this->render('administration/home.html.twig', ['csrfToken' => $csrfToken]);
-
-        if ($request->cookies->get(self::CSRF_COOKIE) !== $csrfToken) {
-            $response->headers->setCookie($this->cookie(self::CSRF_COOKIE, $csrfToken));
-        }
 
         return $response;
     }
@@ -138,15 +115,16 @@ final class AuthenticationController extends AbstractController
                     ? $this->administratorService->refreshCsrfToken($this->runtimeConfiguration->applicationRoot, $sessionId)
                     : $csrfToken;
 
-                return $this->renderPasswordChangeFailure($failure, $failureToken);
+                return $this->renderPasswordChangeFailure($failure, $failureToken, $request);
             } catch (InvalidArgumentException) {
-                return $this->renderPasswordChangeFailure(new AdministratorFailure('password_invalid'), $csrfToken);
+                return $this->renderPasswordChangeFailure(new AdministratorFailure('password_invalid'), $csrfToken, $request);
             }
         }
 
         $response = $this->render('administration/password_change.html.twig', [
             'csrfToken' => $csrfToken,
             'error' => null,
+            'theme' => PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE)),
         ]);
 
         if ($request->cookies->get(self::CSRF_COOKIE) !== $csrfToken) {
@@ -199,6 +177,7 @@ final class AuthenticationController extends AbstractController
                 'csrf_invalid', 'request_malformed' => 'The security form is invalid. Please try again.',
                 default => 'Administrator authentication is temporarily unavailable.',
             },
+            'theme' => PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE)),
         ], new Response('', $status));
         $response->headers->setCookie($this->cookie(self::LOGIN_CSRF_COOKIE, $csrfToken));
 
@@ -209,7 +188,7 @@ final class AuthenticationController extends AbstractController
         return $response;
     }
 
-    private function renderPasswordChangeFailure(AdministratorFailure $failure, string $csrfToken): Response
+    private function renderPasswordChangeFailure(AdministratorFailure $failure, string $csrfToken, Request $request): Response
     {
         $response = $this->render('administration/password_change.html.twig', [
             'csrfToken' => $csrfToken,
@@ -219,6 +198,7 @@ final class AuthenticationController extends AbstractController
                 'csrf_invalid' => 'The security token is invalid. Please try again.',
                 default => 'The password could not be changed safely.',
             },
+            'theme' => PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE)),
         ], new Response('', $failure->failureCode === 'csrf_invalid' ? Response::HTTP_BAD_REQUEST : Response::HTTP_UNPROCESSABLE_ENTITY));
 
         return $response;

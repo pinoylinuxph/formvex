@@ -1,0 +1,13 @@
+<div class="fv-action-bar">
+    <div>
+        {% if helpText is defined %}
+            <p class="fv-action-bar-help">{{ helpText }}</p>
+        {% endif %}
+    </div>
+    <div class="fv-action-bar-actions">
+        {% if cancelHref is defined %}
+            <a class="fv-button fv-button-secondary" href="{{ cancelHref }}">Cancel</a>
+        {% endif %}
+        <button class="fv-button fv-button-primary" type="submit">{{ submitLabel|default('Save changes') }}</button>
+    </div>
+</div>

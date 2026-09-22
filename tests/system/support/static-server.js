@@ -6,7 +6,11 @@ import { resolve } from 'node:path';
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const routes = new Map([
   ['/fixture', resolve(repositoryRoot, 'tests/fixtures/client/structural.html')],
+  ['/spoke-shell', resolve(repositoryRoot, 'tests/fixtures/spoke-admin/shell.html')],
   ['/build/client.js', resolve(repositoryRoot, 'build/client.js')],
+  ['/build/formvex-ui.css', resolve(repositoryRoot, 'build/formvex-ui.css')],
+  ['/build/platform-ui.js', resolve(repositoryRoot, 'build/platform-ui.js')],
+  ['/build/spoke-admin.js', resolve(repositoryRoot, 'build/spoke-admin.js')],
 ]);
 
 const server = createServer(async (request, response) => {
@@ -29,7 +33,9 @@ const server = createServer(async (request, response) => {
     await stat(file);
     const contentType = file.endsWith('.js')
       ? 'text/javascript; charset=utf-8'
-      : 'text/html; charset=utf-8';
+      : file.endsWith('.css')
+        ? 'text/css; charset=utf-8'
+        : 'text/html; charset=utf-8';
     response.writeHead(200, { 'content-type': contentType });
     createReadStream(file).pipe(response);
   } catch {
