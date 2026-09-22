@@ -1,0 +1,9 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Hub\:
+        resource: '../src/'
+        exclude:
+            - '../src/Kernel.php'

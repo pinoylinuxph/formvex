@@ -1,0 +1,32 @@
+{
+  "name": "formvex",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Formvex development and browser-asset workspace.",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "workspaces": [
+    "packages/client",
+    "packages/platform-ui"
+  ],
+  "scripts": {
+    "format:check": "prettier --check \"{apps,packages,tests}/**/*.{css,html,js,json,md}\" \"*.{js,json,md}\"",
+    "lint": "eslint apps packages tests vitest.config.js vite.config.js playwright.config.js eslint.config.js",
+    "test:unit": "vitest run",
+    "test:browser": "playwright test",
+    "build": "vite build",
+    "security:dependencies": "npm audit --audit-level=high",
+    "qa": "npm run format:check && npm run lint && npm run test:unit && npm run build && npm run test:browser"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
+    "eslint": "10.11.0",
+    "prettier": "3.9.8",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
+  }
+}

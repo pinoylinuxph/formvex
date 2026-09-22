@@ -1,0 +1,7 @@
+{
+  "name": "@formvex/platform-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./assets/index.js"
+}

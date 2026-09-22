@@ -1,0 +1,73 @@
+# Local environment and secret-bearing configuration
+.env
+.env.*
+!.env.example
+!.env.test
+auth.json
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Private development process and AI working context
+/AGENTS.md
+/docs/context/
+/logoslab/
+
+# Optional local instruction overrides
+/AGENTS.local.md
+
+# Installed dependencies
+vendor/
+node_modules/
+
+# PHP and Symfony generated state
+/apps/*/var/
+/.phpunit.cache/
+/.phpunit.result.cache
+/.php-cs-fixer.cache
+/.phpstan.cache/
+
+# JavaScript tooling caches and reports
+/.npm/
+/.cache/
+.eslintcache
+*.tsbuildinfo
+npm-debug.log*
+/coverage/
+/test-results/
+/playwright-report/
+/blob-report/
+
+# Generated build and release outputs
+/apps/*/public/build/
+/build/
+/dist/
+/artifacts/
+/releases/
+
+# Local runtime and private-storage outputs
+/runtime/
+/storage/
+/backups/
+/exports/
+/diagnostics/
+/logs/
+/tmp/
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+
+# Editor and operating-system files
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

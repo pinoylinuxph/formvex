@@ -1,0 +1,20 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Formvex\Hub\Kernel;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+
+$_SERVER['APP_ENV'] ??= $_ENV['APP_ENV'] ?? 'test';
+$_SERVER['APP_DEBUG'] ??= $_ENV['APP_DEBUG'] ?? '0';
+
+require dirname(__DIR__) . '/config/bootstrap.php';
+
+$kernel = new Kernel(
+    (string) $_SERVER['APP_ENV'],
+    filter_var($_SERVER['APP_DEBUG'], FILTER_VALIDATE_BOOL),
+);
+
+$application = new Application($kernel);
+$application->run();

@@ -1,0 +1,9 @@
+parameters:
+    level: max
+    paths:
+        - apps/spoke/src
+        - apps/hub/src
+        - packages/core/src
+        - packages/contracts/src
+    tmpDir: .phpstan.cache
+    treatPhpDocTypesAsCertain: true

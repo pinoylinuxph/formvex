@@ -1,0 +1,34 @@
+import js from '@eslint/js';
+
+export default [
+  {
+    ignores: [
+      'apps/*/public/build/**',
+      'build/**',
+      'coverage/**',
+      'node_modules/**',
+      'playwright-report/**',
+      'test-results/**',
+    ],
+  },
+  js.configs.recommended,
+  {
+    files: ['**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        document: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+      },
+    },
+    rules: {
+      'no-console': 'error',
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-var': 'error',
+      'prefer-const': 'error',
+    },
+  },
+];

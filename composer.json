@@ -1,0 +1,89 @@
+{
+    "name": "pinoylinux/formvex",
+    "description": "Self-hosted form processing and SMTP delivery for existing websites.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.4 <8.6",
+        "ext-ctype": "*",
+        "ext-iconv": "*",
+        "symfony/cache": "7.4.*",
+        "symfony/config": "7.4.*",
+        "symfony/console": "7.4.*",
+        "symfony/dependency-injection": "7.4.*",
+        "symfony/dotenv": "7.4.*",
+        "symfony/error-handler": "7.4.*",
+        "symfony/event-dispatcher": "7.4.*",
+        "symfony/filesystem": "7.4.*",
+        "symfony/finder": "7.4.*",
+        "symfony/framework-bundle": "7.4.*",
+        "symfony/http-foundation": "7.4.*",
+        "symfony/http-kernel": "7.4.*",
+        "symfony/routing": "7.4.*",
+        "symfony/twig-bridge": "7.4.*",
+        "symfony/twig-bundle": "7.4.*",
+        "symfony/var-exporter": "7.4.*",
+        "symfony/yaml": "7.4.*"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "phpstan/phpstan": "^2.2",
+        "phpunit/phpunit": "^13.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "Formvex\\Spoke\\": "apps/spoke/src/",
+            "Formvex\\Hub\\": "apps/hub/src/",
+            "Formvex\\Core\\": "packages/core/src/",
+            "Formvex\\Contracts\\": "packages/contracts/src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Formvex\\Tests\\Contract\\": "tests/contract/",
+            "Formvex\\Tests\\Integration\\": "tests/integration/",
+            "Formvex\\Tests\\System\\": "tests/system/",
+            "Formvex\\Tests\\Unit\\": "tests/unit/"
+        }
+    },
+    "config": {
+        "allow-plugins": {},
+        "optimize-autoloader": true,
+        "preferred-install": {
+            "*": "dist"
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "format:check": "php-cs-fixer fix --dry-run --diff --using-cache=no",
+        "analyse": "phpstan analyse --no-progress",
+        "test": "phpunit",
+        "symfony:lint": [
+            "@php apps/spoke/bin/console lint:container --env=test",
+            "@php apps/spoke/bin/console lint:yaml apps/spoke/config --parse-tags",
+            "@php apps/spoke/bin/console lint:twig apps/spoke/templates --env=test",
+            "@php apps/hub/bin/console lint:container --env=test",
+            "@php apps/hub/bin/console lint:yaml apps/hub/config --parse-tags",
+            "@php apps/hub/bin/console lint:twig apps/hub/templates --env=test"
+        ],
+        "security:repository": "phpunit --testsuite repository-security",
+        "security:dependencies": [
+            "composer audit --locked --no-interaction",
+            "npm audit --audit-level=high"
+        ],
+        "js:qa": "npm run qa",
+        "assets:build": "npm run build",
+        "qa": [
+            "@composer validate --strict --no-check-publish",
+            "@format:check",
+            "@analyse",
+            "@symfony:lint",
+            "@test",
+            "@security:dependencies",
+            "@js:qa",
+            "@assets:build"
+        ]
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
