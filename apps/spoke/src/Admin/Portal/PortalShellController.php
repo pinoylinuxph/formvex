@@ -6,6 +6,7 @@ namespace Formvex\Spoke\Admin\Portal;
 
 use Formvex\Spoke\Admin\AuthenticationRequestResolver;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
+use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -20,71 +21,11 @@ final class PortalShellController extends AbstractController
 
     private const CSRF_COOKIE = 'formvex_admin_csrf';
 
-    /**
-     * @var list<string>
-     */
-    private const RETURN_ROUTES = [
-        'spoke_admin_home',
-        'spoke_admin_forms',
-        'spoke_admin_submissions',
-        'spoke_admin_delivery',
-        'spoke_admin_diagnostics',
-        'spoke_admin_maintenance',
-        'spoke_admin_settings',
-    ];
-
-    /**
-     * @var array<string, array{label: string, description: string, route: string, mark: string}>
-     */
-    private const DESTINATIONS = [
-        'overview' => [
-            'label' => 'Overview',
-            'description' => 'A compact view of the local Spoke installation and its current state.',
-            'route' => 'spoke_admin_home',
-            'mark' => 'O',
-        ],
-        'forms' => [
-            'label' => 'Forms',
-            'description' => 'Form discovery, field mapping, validation, and activation.',
-            'route' => 'spoke_admin_forms',
-            'mark' => 'F',
-        ],
-        'submissions' => [
-            'label' => 'Submissions',
-            'description' => 'Review, classification, export, restoration, and permitted deletion.',
-            'route' => 'spoke_admin_submissions',
-            'mark' => 'S',
-        ],
-        'delivery' => [
-            'label' => 'Delivery',
-            'description' => 'Queue state, delivery attempts, retry state, and SMTP test results.',
-            'route' => 'spoke_admin_delivery',
-            'mark' => 'D',
-        ],
-        'diagnostics' => [
-            'label' => 'Diagnostics',
-            'description' => 'Health checks, scheduler heartbeat, and administrator-triggered tests.',
-            'route' => 'spoke_admin_diagnostics',
-            'mark' => 'H',
-        ],
-        'maintenance' => [
-            'label' => 'Maintenance',
-            'description' => 'Backups, restore, retention, update notices, and maintenance state.',
-            'route' => 'spoke_admin_maintenance',
-            'mark' => 'M',
-        ],
-        'settings' => [
-            'label' => 'Settings',
-            'description' => 'Website identity, SMTP, spam controls, limits, retention, and security.',
-            'route' => 'spoke_admin_settings',
-            'mark' => 'G',
-        ],
-    ];
-
     public function __construct(
         private readonly LocalAdministratorService $administratorService,
         private readonly AuthenticationRequestResolver $requestResolver,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
+        private readonly InstallationSettingsService $installationSettingsService,
     ) {
     }
 
@@ -124,12 +65,6 @@ final class PortalShellController extends AbstractController
         return $this->renderDestination($request, 'maintenance');
     }
 
-    #[Route('/formvex/settings', name: 'spoke_admin_settings', methods: ['GET'])]
-    public function settings(Request $request): Response
-    {
-        return $this->renderDestination($request, 'settings');
-    }
-
     #[Route('/formvex/preferences/theme', name: 'spoke_admin_theme', methods: ['POST'])]
     public function theme(Request $request): Response
     {
@@ -155,7 +90,7 @@ final class PortalShellController extends AbstractController
             }
 
             if (!in_array($preference->theme, ['light', 'dark'], true)
-                || !in_array($preference->returnRoute, self::RETURN_ROUTES, true)) {
+                || !in_array($preference->returnRoute, PortalNavigation::returnRoutes(), true)) {
                 throw new AdministratorFailure('request_malformed');
             }
 
@@ -184,7 +119,7 @@ final class PortalShellController extends AbstractController
             return $this->redirectToRoute('spoke_admin_password_change');
         }
 
-        $definition = self::DESTINATIONS[$destination];
+        $definition = PortalNavigation::destinations()[$destination];
         $route = $definition['route'];
         $csrfToken = $this->csrfToken($request, $sessionId);
         $theme = PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE));
@@ -197,9 +132,9 @@ final class PortalShellController extends AbstractController
             'pageDescription' => $definition['description'],
             'theme' => $theme,
             'sidebarState' => $sidebarState,
-            'websiteName' => 'Local Spoke',
+            'websiteName' => $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot)->settings->websiteDisplayName,
             'administratorName' => 'admin',
-            'navItems' => array_values(self::DESTINATIONS),
+            'navItems' => array_values(PortalNavigation::destinations()),
             'isOverview' => $destination === 'overview',
         ]);
 

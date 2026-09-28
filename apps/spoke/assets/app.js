@@ -159,10 +159,24 @@ const initialiseSidebar = () => {
   });
 };
 
+const initialiseSmtpPortDefaults = () => {
+  const encryption = document.querySelector('#smtp-encryption');
+  const port = document.querySelector('#smtp-port');
+
+  if (!(encryption instanceof HTMLSelectElement) || !(port instanceof HTMLInputElement)) {
+    return;
+  }
+
+  encryption.addEventListener('change', () => {
+    port.value = encryption.value === 'starttls' ? '587' : '465';
+  });
+};
+
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
     initialiseTheme();
     initialiseSidebar();
+    initialiseSmtpPortDefaults();
   });
 }
 

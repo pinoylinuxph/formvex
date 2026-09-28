@@ -41,11 +41,19 @@ final readonly class InitializeSpokeInstallation
                 }
 
                 if ($marker !== null) {
-                    if (
-                        $marker->installationId !== $initialization->identity->installationId
-                        || $marker->schemaVersion !== $initialization->identity->schemaVersion
-                    ) {
+                    if ($marker->installationId !== $initialization->identity->installationId) {
                         return InstallationOutcome::failure($preflight, 'installation_state_invalid');
+                    }
+
+                    if ($marker->schemaVersion !== $initialization->identity->schemaVersion) {
+                        if (!$this->isUpgradeVersion($marker->schemaVersion, $initialization->identity->schemaVersion)) {
+                            return InstallationOutcome::failure($preflight, 'installation_state_invalid');
+                        }
+
+                        $this->privateStorage->writeMarker($paths, new InstallationMarker(
+                            $initialization->identity->installationId,
+                            $initialization->identity->schemaVersion,
+                        ));
                     }
 
                     return InstallationOutcome::success($preflight, $initialization->identity, true);
@@ -68,5 +76,12 @@ final readonly class InitializeSpokeInstallation
         } catch (Throwable) {
             return InstallationOutcome::failure($preflight, 'internal_error');
         }
+    }
+
+    private function isUpgradeVersion(string $storedVersion, string $latestVersion): bool
+    {
+        return preg_match('/^\d{6}$/', $storedVersion) === 1
+            && preg_match('/^\d{6}$/', $latestVersion) === 1
+            && (int) $storedVersion < (int) $latestVersion;
     }
 }

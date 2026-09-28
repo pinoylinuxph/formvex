@@ -22,6 +22,8 @@ export default [
         fetch: 'readonly',
         FormData: 'readonly',
         HTMLButtonElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLSelectElement: 'readonly',
         HTMLElement: 'readonly',
         process: 'readonly',
         URL: 'readonly',

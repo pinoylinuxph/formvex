@@ -1,0 +1,244 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}Settings · Formvex{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    <nav class="fv-breadcrumbs" aria-label="Breadcrumbs">
+        <a href="{{ path('spoke_admin_home') }}">Overview</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Settings</span>
+    </nav>
+
+    {% include '@platform_ui/components/page_header.html.twig' with {
+        pageTitle: pageTitle,
+        pageDescription: pageDescription,
+    } only %}
+
+    {% include '@platform_ui/components/feedback.html.twig' with {
+        message: message,
+        title: messageVariant == 'success' ? 'Saved' : 'Settings notice',
+        variant: messageVariant,
+    } only %}
+
+    <section class="fv-panel fv-settings-panel" aria-labelledby="identity-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Website identity</p>
+            <h2 id="identity-heading">Identify this website</h2>
+            <p>These values identify the website connected to this local Formvex installation.</p>
+        </header>
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_identity_update') }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'website-display-name',
+                    name: 'website_display_name',
+                    label: 'Website display name',
+                    value: formData.website_display_name,
+                    help: 'Shown in the Formvex administration header.',
+                    error: fieldErrors.website_display_name|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'operational-alert-email',
+                    name: 'operational_alert_email',
+                    label: 'Operational-alert email',
+                    type: 'email',
+                    value: formData.operational_alert_email,
+                    help: 'Formvex uses this address for administrator-visible operational notifications.',
+                    error: fieldErrors.operational_alert_email|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'bare-domain',
+                    name: 'bare_domain',
+                    label: 'Bare domain',
+                    value: formData.bare_domain,
+                    placeholder: 'example.com',
+                    help: 'Enter the hostname without a scheme, path, port, or www prefix.',
+                    error: fieldErrors.bare_domain|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'www-alias',
+                    name: 'www_alias',
+                    label: 'WWW alias (optional)',
+                    value: formData.www_alias,
+                    placeholder: 'www.example.com',
+                    help: 'Use this only when the website also serves an exact www hostname.',
+                    error: fieldErrors.www_alias|default(null),
+                } only %}
+            </div>
+            {% include '@platform_ui/components/form_action_bar.html.twig' with {
+                helpText: 'Changes are saved locally on this Spoke.',
+                submitLabel: 'Save website identity',
+            } only %}
+        </form>
+    </section>
+
+    <section class="fv-panel fv-settings-panel" aria-labelledby="smtp-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">SMTP delivery</p>
+            <h2 id="smtp-heading">Configure outgoing email</h2>
+            <p>SMTP credentials stay in private local storage. Formvex never displays the saved password.</p>
+        </header>
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_smtp_update') }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'sender-email',
+                    name: 'sender_email',
+                    label: 'Sender email',
+                    type: 'email',
+                    value: formData.sender_email,
+                    help: 'This server-controlled address appears as the message sender.',
+                    error: fieldErrors.sender_email|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'sender-name',
+                    name: 'sender_name',
+                    label: 'Sender display name (optional)',
+                    value: formData.sender_name,
+                    error: fieldErrors.sender_name|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'smtp-host',
+                    name: 'smtp_host',
+                    label: 'SMTP host',
+                    value: formData.smtp_host,
+                    placeholder: 'mail.example.com',
+                    error: fieldErrors.smtp_host|default(null),
+                } only %}
+                <div class="fv-field">
+                    <label for="smtp-encryption">Encryption mode</label>
+                    <select class="fv-input" id="smtp-encryption" name="smtp_encryption">
+                        <option value="smtps"{% if formData.smtp_encryption == 'smtps' %} selected{% endif %}>SMTPS (implicit TLS)</option>
+                        <option value="starttls"{% if formData.smtp_encryption == 'starttls' %} selected{% endif %}>STARTTLS</option>
+                    </select>
+                    {% if fieldErrors.smtp_encryption|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.smtp_encryption }}</p>{% endif %}
+                </div>
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'smtp-port',
+                    name: 'smtp_port',
+                    label: 'SMTP port',
+                    type: 'number',
+                    value: formData.smtp_port,
+                    min: 1,
+                    max: 65535,
+                    error: fieldErrors.smtp_port|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'smtp-username',
+                    name: 'smtp_username',
+                    label: 'SMTP username',
+                    value: formData.smtp_username,
+                    autocomplete: 'username',
+                    error: fieldErrors.smtp_username|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'smtp-password',
+                    name: 'smtp_password',
+                    label: 'SMTP password',
+                    type: 'password',
+                    value: '',
+                    autocomplete: 'new-password',
+                    help: settings.smtpSecretConfigured ? 'Leave blank to keep the current password.' : 'A password is required before SMTP can be tested.',
+                    error: fieldErrors.smtp_password|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'smtp-timeout-seconds',
+                    name: 'smtp_timeout_seconds',
+                    label: 'Connection timeout (seconds)',
+                    type: 'number',
+                    value: formData.smtp_timeout_seconds,
+                    min: 3,
+                    max: 60,
+                    help: 'The default is 10 seconds; allowed values are 3–60 seconds.',
+                    error: fieldErrors.smtp_timeout_seconds|default(null),
+                } only %}
+            </div>
+            {% include '@platform_ui/components/form_action_bar.html.twig' with {
+                helpText: settings.testState.status.value == 'stale' ? 'SMTP settings changed. Send a new test after saving.' : 'Saving settings does not send email.',
+                submitLabel: 'Save SMTP settings',
+            } only %}
+        </form>
+    </section>
+
+    <section class="fv-panel fv-settings-panel" aria-labelledby="security-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Administrator security</p>
+            <h2 id="security-heading">Login-throttle controls</h2>
+            <p>These settings limit repeated failed administrator login attempts without permanently locking the account.</p>
+        </header>
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_security_update') }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'maximum-failures',
+                    name: 'maximum_failures',
+                    label: 'Failed attempts before cooldown',
+                    type: 'number',
+                    value: formData.maximum_failures,
+                    min: 3,
+                    max: 20,
+                    error: fieldErrors.maximum_failures|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'window-minutes',
+                    name: 'window_minutes',
+                    label: 'Rolling window (minutes)',
+                    type: 'number',
+                    value: formData.window_minutes,
+                    min: 5,
+                    max: 60,
+                    error: fieldErrors.window_minutes|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'cooldown-minutes',
+                    name: 'cooldown_minutes',
+                    label: 'Cooldown (minutes)',
+                    type: 'number',
+                    value: formData.cooldown_minutes,
+                    min: 5,
+                    max: 120,
+                    error: fieldErrors.cooldown_minutes|default(null),
+                } only %}
+            </div>
+            {% include '@platform_ui/components/form_action_bar.html.twig' with {
+                helpText: 'Defaults: 5 failed attempts, 15-minute window, 15-minute cooldown.',
+                submitLabel: 'Save security settings',
+            } only %}
+        </form>
+    </section>
+
+    <section class="fv-panel fv-settings-panel" aria-labelledby="smtp-test-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Explicit action</p>
+            <h2 id="smtp-test-heading">Send a test email</h2>
+            <p>Enter one address where you want to receive the test. Formvex sends no test automatically when this page opens or when settings are saved.</p>
+        </header>
+        {% if settings.smtpReady and settings.testState.status.value == 'passed' and settings.testState.testedRevision == settings.settings.smtpConfigurationRevision %}
+            <div class="fv-alert" role="status"><strong>SMTP test passed.</strong><span>{{ settings.testState.summary }}</span></div>
+        {% elseif settings.testState.status.value == 'uncertain' %}
+            <div class="fv-alert fv-alert-danger" role="alert"><strong>SMTP result is uncertain.</strong><span>{{ settings.testState.summary }}</span></div>
+        {% elseif settings.testState.status.value == 'failed' %}
+            <div class="fv-alert fv-alert-danger" role="alert"><strong>SMTP test failed.</strong><span>{{ settings.testState.summary }}</span></div>
+        {% elseif settings.testState.status.value == 'stale' %}
+            <div class="fv-alert" role="status"><strong>New SMTP test required.</strong><span>{{ settings.testState.summary }}</span></div>
+        {% else %}
+            <div class="fv-alert" role="status"><strong>SMTP is not ready.</strong><span>Save a valid SMTP host, sender address, username, and password before sending a test.</span></div>
+        {% endif %}
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_smtp_test') }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-test-row">
+                <div class="fv-field">
+                    <label for="test-recipient">Test recipient</label>
+                    <input class="fv-input" id="test-recipient" name="test_recipient" type="email" value="{{ testRecipient }}" autocomplete="email" required>
+                    <p class="fv-field-help">Use exactly one valid email address. The address is used only for this test and is not saved.</p>
+                    {% if fieldErrors.test_recipient|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.test_recipient }}</p>{% endif %}
+                </div>
+                <div class="fv-settings-test-action">
+                    <button class="fv-button fv-button-primary" type="submit"{% if not settings.smtpReady %} disabled{% endif %}>Send test email</button>
+                </div>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

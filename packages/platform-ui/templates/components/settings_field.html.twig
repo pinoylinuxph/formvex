@@ -1,0 +1,16 @@
+<div class="fv-field">
+    <label for="{{ id }}">{{ label }}</label>
+    <input
+        class="fv-input"
+        id="{{ id }}"
+        name="{{ name }}"
+        type="{{ type|default('text') }}"
+        value="{{ value|default('') }}"
+        {% if placeholder is defined %}placeholder="{{ placeholder }}"{% endif %}
+        {% if autocomplete is defined %}autocomplete="{{ autocomplete }}"{% endif %}
+        {% if min is defined %}min="{{ min }}"{% endif %}
+        {% if max is defined %}max="{{ max }}"{% endif %}
+    >
+    {% if help is defined %}<p class="fv-field-help">{{ help }}</p>{% endif %}
+    {% if error is not empty %}<p class="fv-field-error" role="alert">{{ error }}</p>{% endif %}
+</div>

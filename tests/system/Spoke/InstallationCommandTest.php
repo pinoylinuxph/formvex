@@ -44,9 +44,16 @@ final class InstallationCommandTest extends KernelTestCase
         self::assertSame(0, $tester->execute($input));
         self::assertStringContainsString('SUCCESS installation: initialized', $tester->getDisplay());
 
+        $markerPath = $this->temporaryRoot . '/formvex/runtime/installation-state.json';
+        $marker = json_decode((string) file_get_contents($markerPath), true, 4, JSON_THROW_ON_ERROR);
+        $marker['schema_version'] = '000002';
+        file_put_contents($markerPath, json_encode($marker, JSON_THROW_ON_ERROR));
+        chmod($markerPath, 0o600);
+
         $tester = new CommandTester($command);
         self::assertSame(0, $tester->execute($input));
         self::assertStringContainsString('SUCCESS installation: already_initialized', $tester->getDisplay());
+        self::assertStringContainsString('"schema_version":"000003"', (string) file_get_contents($markerPath));
     }
 
     public function testInvalidApplicationRootReturnsSafeFailure(): void

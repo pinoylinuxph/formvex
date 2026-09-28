@@ -65,13 +65,24 @@ final readonly class PdoInstallationStore implements InstallationStore
                 }
 
                 if ($row['schema_version'] !== $schemaVersion) {
-                    throw new InstallationFailure('installation_state_invalid');
+                    if (!$this->isUpgradeVersion($row['schema_version'], $schemaVersion)) {
+                        throw new InstallationFailure('installation_state_invalid');
+                    }
+
+                    $upgrade = $connection->prepare(
+                        'UPDATE installation_metadata SET schema_version = :schema_version WHERE singleton_id = 1',
+                    );
+                    $upgrade->execute(['schema_version' => $schemaVersion]);
+
+                    if ($upgrade->rowCount() !== 1) {
+                        throw new InstallationFailure('installation_state_invalid');
+                    }
                 }
 
                 $connection->commit();
 
                 return new InstallationInitialization(
-                    new InstallationIdentity($row['installation_id'], $row['schema_version']),
+                    new InstallationIdentity($row['installation_id'], $schemaVersion),
                     false,
                 );
             }
@@ -106,5 +117,12 @@ final readonly class PdoInstallationStore implements InstallationStore
 
             throw new InstallationFailure('database_initialization_failed');
         }
+    }
+
+    private function isUpgradeVersion(string $storedVersion, string $latestVersion): bool
+    {
+        return preg_match('/^\d{6}$/', $storedVersion) === 1
+            && preg_match('/^\d{6}$/', $latestVersion) === 1
+            && (int) $storedVersion < (int) $latestVersion;
     }
 }

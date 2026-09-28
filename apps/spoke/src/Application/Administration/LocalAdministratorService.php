@@ -18,18 +18,13 @@ use Formvex\Spoke\Domain\Administration\SessionRecord;
 use Formvex\Spoke\Domain\Administration\TemporaryPasswordResult;
 use Formvex\Spoke\Domain\Installation\Contract\Clock;
 use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
+use Formvex\Spoke\Domain\InstallationSettings\Contract\InstallationSettingsStore;
 
 final readonly class LocalAdministratorService
 {
     private const ADMINISTRATOR_IDENTIFIER = 'admin';
 
     private const IDLE_TIMEOUT_SECONDS = 1800;
-
-    private const THROTTLE_WINDOW_SECONDS = 900;
-
-    private const THROTTLE_MAXIMUM_FAILURES = 5;
-
-    private const THROTTLE_COOLDOWN_SECONDS = 900;
 
     public function __construct(
         private SpokeStorageResolver $storageResolver,
@@ -39,6 +34,7 @@ final readonly class LocalAdministratorService
         private TemporaryPasswordGenerator $temporaryPasswordGenerator,
         private PasswordPolicy $passwordPolicy,
         private Clock $clock,
+        private InstallationSettingsStore $installationSettingsStore,
     ) {
     }
 
@@ -92,6 +88,7 @@ final readonly class LocalAdministratorService
     ): AuthenticatedSession {
         $paths = $this->storageResolver->resolve($applicationRoot);
         $now = $this->clock->now();
+        $throttleSettings = $this->installationSettingsStore->get($paths)->loginThrottle;
         $throttleKeyHash = $this->securityTokenGenerator->hash($clientAddress);
         $throttle = $this->store->findThrottleState($paths, $throttleKeyHash);
 
@@ -113,9 +110,9 @@ final readonly class LocalAdministratorService
                 $paths,
                 $throttleKeyHash,
                 $now,
-                self::THROTTLE_WINDOW_SECONDS,
-                self::THROTTLE_MAXIMUM_FAILURES,
-                self::THROTTLE_COOLDOWN_SECONDS,
+                $throttleSettings->windowSeconds(),
+                $throttleSettings->maximumFailures,
+                $throttleSettings->cooldownSeconds(),
             );
             $retryAfter = $failure->cooldownUntil === null
                 ? null

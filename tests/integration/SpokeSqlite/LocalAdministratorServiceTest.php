@@ -9,6 +9,7 @@ use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Administration\PasswordPolicy;
 use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
 use Formvex\Spoke\Infrastructure\Filesystem\LocalSpokeStorageResolver;
+use Formvex\Spoke\Infrastructure\Persistence\PdoInstallationSettingsStore;
 use Formvex\Spoke\Infrastructure\Persistence\PdoInstallationStore;
 use Formvex\Spoke\Infrastructure\Persistence\PdoLocalAdministratorStore;
 use Formvex\Spoke\Infrastructure\Persistence\SqliteMigrationRunner;
@@ -17,6 +18,7 @@ use Formvex\Spoke\Infrastructure\Security\NativeSecurityTokenGenerator;
 use Formvex\Spoke\Infrastructure\Security\NativeTemporaryPasswordGenerator;
 use Formvex\Spoke\Migrations\Version000001CreateInstallationMetadata;
 use Formvex\Spoke\Migrations\Version000002CreateLocalAdministratorAuth;
+use Formvex\Spoke\Migrations\Version000003CreateInstallationSettings;
 use PHPUnit\Framework\TestCase;
 
 final class LocalAdministratorServiceTest extends TestCase
@@ -40,6 +42,7 @@ final class LocalAdministratorServiceTest extends TestCase
             new SqliteMigrationRunner(
                 new Version000001CreateInstallationMetadata(),
                 new Version000002CreateLocalAdministratorAuth(),
+                new Version000003CreateInstallationSettings(),
                 $this->clock,
             ),
             $this->clock,
@@ -141,6 +144,7 @@ final class LocalAdministratorServiceTest extends TestCase
             new NativeTemporaryPasswordGenerator(),
             new PasswordPolicy(),
             $this->clock,
+            new PdoInstallationSettingsStore(),
         );
     }
 

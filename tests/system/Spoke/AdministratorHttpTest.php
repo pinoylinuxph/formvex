@@ -231,6 +231,41 @@ final class AdministratorHttpTest extends KernelTestCase
         ));
     }
 
+    public function testSettingsPageUsesDefaultsAndPersistsWebsiteIdentity(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $settings = $this->request('GET', '/formvex/settings', [], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+
+        self::assertSame(Response::HTTP_OK, $settings->getStatusCode());
+        self::assertStringContainsString('Configure outgoing email', $settings->getContent());
+        self::assertStringContainsString('SMTPS (implicit TLS)', $settings->getContent());
+        self::assertStringContainsString('value="465"', $settings->getContent());
+        self::assertStringContainsString('value="10"', $settings->getContent());
+
+        $saved = $this->request(
+            'POST',
+            '/formvex/settings/identity',
+            [
+                '_token' => $csrf,
+                'website_display_name' => 'Logoslab Production',
+                'bare_domain' => 'logoslab.xyz',
+                'www_alias' => 'www.logoslab.xyz',
+                'operational_alert_email' => 'admin@logoslab.xyz',
+            ],
+            [
+                'formvex_session' => $session,
+                'formvex_admin_csrf' => $csrf,
+            ],
+        );
+
+        self::assertSame(Response::HTTP_OK, $saved->getStatusCode());
+        self::assertStringContainsString('The identity settings were saved successfully.', $saved->getContent());
+        self::assertStringContainsString('Logoslab Production', $saved->getContent());
+    }
+
     /**
      * @return array{0: string, 1: string}
      */

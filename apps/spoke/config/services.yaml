@@ -16,6 +16,10 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Spoke\Migrations\Version000003CreateInstallationSettings:
+        autowire: true
+        autoconfigure: true
+
     Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration:
         arguments:
             $applicationRoot: '%env(string:FORMVEX_APPLICATION_ROOT)%'
