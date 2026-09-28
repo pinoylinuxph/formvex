@@ -1,3 +1,7 @@
 controllers:
     resource: '../src/Admin/'
     type: attribute
+
+public_controllers:
+    resource: '../src/Http/'
+    type: attribute

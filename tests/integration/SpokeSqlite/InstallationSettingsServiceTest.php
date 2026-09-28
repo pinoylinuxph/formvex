@@ -50,6 +50,7 @@ final class InstallationSettingsServiceTest extends TestCase
                 new \Formvex\Spoke\Migrations\Version000001CreateInstallationMetadata(),
                 new \Formvex\Spoke\Migrations\Version000002CreateLocalAdministratorAuth(),
                 new \Formvex\Spoke\Migrations\Version000003CreateInstallationSettings(),
+                new \Formvex\Spoke\Migrations\Version000004CreateFormConfiguration(),
                 $this->clock,
             ),
             $this->clock,

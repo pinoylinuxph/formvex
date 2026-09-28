@@ -1,0 +1,20 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}Form Trash · Formvex{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    <nav class="fv-breadcrumbs" aria-label="Breadcrumbs"><a href="{{ path('spoke_admin_home') }}">Overview</a><span aria-hidden="true">/</span><a href="{{ path('spoke_admin_forms') }}">Forms</a><span aria-hidden="true">/</span><span aria-current="page">Trash</span></nav>
+    {% include '@platform_ui/components/page_header.html.twig' with {pageTitle: 'Form Trash', pageDescription: 'Review removed forms before restoring or permanently deleting them.'} only %}
+    {% include '@platform_ui/components/feedback.html.twig' with {message: message, title: 'Trash notice', variant: messageVariant} only %}
+    <section class="fv-panel" aria-labelledby="trash-heading">
+        <div class="fv-section-heading"><p class="fv-eyebrow">Recoverable records</p><h2 id="trash-heading">Removed forms</h2><p>Permanent deletion is manual, audited, and rejected when protected records reference the form.</p></div>
+        {% set trashForms = forms|filter(form => form.trashed) %}
+        {% if trashForms is empty %}<p>No forms are currently in Trash.</p>{% else %}
+            <div class="fv-table-wrap"><table class="fv-table"><thead><tr><th scope="col">Form</th><th scope="col">Last published</th><th scope="col">Actions</th></tr></thead><tbody>
+            {% for form in trashForms %}<tr><th scope="row">{{ form.displayName }}</th><td>{% if form.publishedState %}v{{ form.publishedVersion }} · {{ form.publishedState.value|capitalize }}{% else %}Not published{% endif %}</td><td><a class="fv-button fv-button-secondary fv-button-small" href="{{ path('spoke_admin_form_edit', {publicFormId: form.publicId}) }}">Review</a></td></tr>{% endfor %}
+            </tbody></table></div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

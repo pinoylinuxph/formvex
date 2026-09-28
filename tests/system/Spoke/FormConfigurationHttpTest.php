@@ -1,0 +1,248 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Formvex\Tests\System\Spoke;
+
+use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
+use Formvex\Spoke\Console\BootstrapAdministratorCommand;
+use Formvex\Spoke\Console\InstallCommand;
+use Formvex\Spoke\Kernel;
+use PDO;
+use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+final class FormConfigurationHttpTest extends KernelTestCase
+{
+    private string $temporaryRoot;
+
+    private string $temporaryPassword;
+
+    protected static function getKernelClass(): string
+    {
+        return Kernel::class;
+    }
+
+    protected function setUp(): void
+    {
+        $this->temporaryRoot = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'formvex-form-http-' . bin2hex(random_bytes(8));
+        mkdir($this->temporaryRoot . '/web', 0o700, true);
+        mkdir($this->temporaryRoot . '/formvex', 0o700, true);
+        $_ENV['FORMVEX_APPLICATION_ROOT'] = $this->temporaryRoot . '/formvex';
+        $_SERVER['FORMVEX_APPLICATION_ROOT'] = $this->temporaryRoot . '/formvex';
+        putenv('FORMVEX_APPLICATION_ROOT=' . $this->temporaryRoot . '/formvex');
+
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
+        $this->install();
+        $command = new CommandTester(self::getContainer()->get(BootstrapAdministratorCommand::class));
+        self::assertSame(0, $command->execute(['--application-root' => $this->temporaryRoot . '/formvex']));
+        preg_match('/TEMPORARY_PASSWORD: ([A-Za-z0-9_-]+)/', $command->getDisplay(), $matches);
+        $this->temporaryPassword = $matches[1] ?? '';
+        self::getContainer()->get(InstallationSettingsService::class)->saveIdentity($this->temporaryRoot . '/formvex', [
+            'website_display_name' => 'Logoslab',
+            'bare_domain' => 'logoslab.xyz',
+            'www_alias' => 'www.logoslab.xyz',
+            'operational_alert_email' => 'admin@logoslab.xyz',
+        ]);
+    }
+
+    protected function tearDown(): void
+    {
+        self::ensureKernelShutdown();
+        putenv('FORMVEX_APPLICATION_ROOT');
+        unset($_ENV['FORMVEX_APPLICATION_ROOT'], $_SERVER['FORMVEX_APPLICATION_ROOT']);
+        $this->removeDirectory($this->temporaryRoot);
+    }
+
+    public function testAdministratorCreatesUpdatesPublishesAndReadsImmutableFormVersions(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $fields = json_encode([
+            [
+                'field_key' => 'message',
+                'control_name' => 'message',
+                'control_type' => 'textarea',
+                'display_label' => 'Message',
+                'parameter_key' => 'message',
+                'ordinal' => 0,
+                'required' => true,
+                'max_length' => 10000,
+                'choices' => [],
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $created = $this->request('POST', '/formvex/forms', [
+            '_token' => $csrf,
+            'display_name' => 'Contact form',
+            'page_host' => 'logoslab.xyz',
+            'page_path' => '/contact?source=home',
+            'form_marker' => 'contact-form',
+            'recipient' => 'owner@logoslab.xyz',
+            'subject' => 'Contact message',
+            'fields_json' => $fields,
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+
+        self::assertSame(Response::HTTP_FOUND, $created->getStatusCode());
+        $location = $created->headers->get('Location');
+        self::assertIsString($location);
+        preg_match('#/formvex/forms/([0-9a-f-]+)$#', $location, $matches);
+        $publicFormId = $matches[1] ?? '';
+        self::assertNotSame('', $publicFormId);
+
+        $form = $this->request('GET', $location, [], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $form->getStatusCode());
+        self::assertStringContainsString('Contact form', $form->getContent());
+        self::assertStringContainsString('name="revision" value="1"', $form->getContent());
+
+        $published = $this->request('POST', '/formvex/forms/' . $publicFormId . '/publish', [
+            '_token' => $csrf,
+            'revision' => '1',
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $published->getStatusCode());
+        self::assertStringContainsString('Configuration version 1 was published.', $published->getContent());
+        self::assertStringContainsString('v1', $published->getContent());
+    }
+
+    public function testPublicResolutionReturnsMinimalMetadataAndSafeNoMatch(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $fields = json_encode([[
+            'field_key' => 'message',
+            'control_name' => 'message',
+            'control_type' => 'textarea',
+            'display_label' => 'Message',
+            'parameter_key' => 'message',
+            'ordinal' => 0,
+            'required' => true,
+            'max_length' => 10000,
+            'choices' => [],
+        ]], JSON_THROW_ON_ERROR);
+        $created = $this->request('POST', '/formvex/forms', [
+            '_token' => $csrf,
+            'display_name' => 'Contact form',
+            'page_host' => 'logoslab.xyz',
+            'page_path' => '/contact',
+            'form_marker' => 'contact-form',
+            'recipient' => 'owner@logoslab.xyz',
+            'subject' => 'Contact message',
+            'fields_json' => $fields,
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        $location = (string) $created->headers->get('Location');
+        preg_match('#/formvex/forms/([0-9a-f-]+)$#', $location, $matches);
+        $publicFormId = $matches[1] ?? '';
+        $published = $this->request('POST', '/formvex/forms/' . $publicFormId . '/publish', ['_token' => $csrf, 'revision' => '1'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $published->getStatusCode());
+        $this->activate($publicFormId);
+
+        $resolved = $this->request('GET', '/formvex/api/v1/forms/resolve', [
+            'schema_version' => '1',
+            'page_path' => '/contact?source=home',
+            'form_marker' => 'contact-form',
+        ], [], ['HTTP_HOST' => 'LOGOSLAB.XYZ.', 'HTTP_ORIGIN' => 'https://logoslab.xyz']);
+        self::assertSame(Response::HTTP_OK, $resolved->getStatusCode());
+        $body = json_decode((string) $resolved->getContent(), true, 4, JSON_THROW_ON_ERROR);
+        self::assertSame($publicFormId, $body['public_form_id']);
+        self::assertSame(1, $body['configuration_version']);
+        self::assertArrayNotHasKey('recipient', $body);
+        self::assertArrayNotHasKey('subject', $body);
+        self::assertSame('https://logoslab.xyz', $resolved->headers->get('Access-Control-Allow-Origin'));
+
+        $notFound = $this->request('GET', '/formvex/api/v1/forms/resolve', [
+            'schema_version' => '1',
+            'page_path' => '/unknown',
+            'form_marker' => 'contact-form',
+        ], [], ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://logoslab.xyz']);
+        self::assertSame(Response::HTTP_NOT_FOUND, $notFound->getStatusCode());
+        $notFoundBody = json_decode((string) $notFound->getContent(), true, 4, JSON_THROW_ON_ERROR);
+        self::assertSame('form_unavailable', $notFoundBody['error']['code']);
+        self::assertNotSame('', $notFoundBody['error']['request_id']);
+        self::assertStringNotContainsString('owner@logoslab.xyz', (string) $notFound->getContent());
+    }
+
+    /** @return array{0: string, 1: string} */
+    private function authenticateAdministrator(): array
+    {
+        $loginPage = $this->request('GET', '/formvex/login');
+        $loginCsrf = $this->cookieValue($loginPage, 'formvex_login_csrf');
+        $login = $this->request('POST', '/formvex/login', [
+            'login_identifier' => 'admin',
+            'password' => $this->temporaryPassword,
+            '_token' => $loginCsrf,
+        ], ['formvex_login_csrf' => $loginCsrf]);
+        $session = $this->cookieValue($login, 'formvex_session');
+        $csrf = $this->cookieValue($login, 'formvex_admin_csrf');
+        $change = $this->request('POST', '/formvex/password/change', [
+            'new_password' => 'correct horse battery staple',
+            'confirmation' => 'correct horse battery staple',
+            '_token' => $csrf,
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+
+        return [$this->cookieValue($change, 'formvex_session'), $this->cookieValue($change, 'formvex_admin_csrf')];
+    }
+
+    private function activate(string $publicFormId): void
+    {
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        $statement = $connection->prepare("UPDATE form_configuration_versions SET state = 'active' WHERE state = 'published' AND form_id = (SELECT id FROM form_configurations WHERE public_id = :public_id)");
+        $statement->execute(['public_id' => $publicFormId]);
+    }
+
+    /** @param array<string, string> $parameters @param array<string, string> $cookies @param array<string, string> $server */
+    private function request(string $method, string $path, array $parameters = [], array $cookies = [], array $server = []): Response
+    {
+        $request = Request::create($path, $method, $parameters, $cookies, [], array_merge([
+            'HTTPS' => 'on',
+            'HTTP_HOST' => 'localhost',
+            'REMOTE_ADDR' => '127.0.0.1',
+        ], $server));
+        $response = self::$kernel->handle($request);
+        self::$kernel->terminate($request, $response);
+
+        return $response;
+    }
+
+    private function install(): void
+    {
+        $command = new CommandTester(self::getContainer()->get(InstallCommand::class));
+        self::assertSame(0, $command->execute([
+            '--application-root' => $this->temporaryRoot . '/formvex',
+            '--web-root' => $this->temporaryRoot . '/web',
+        ]));
+    }
+
+    private function cookieValue(Response $response, string $name): string
+    {
+        foreach ($response->headers->getCookies() as $cookie) {
+            if ($cookie->getName() === $name) {
+                return $cookie->getValue();
+            }
+        }
+
+        self::fail('Expected cookie ' . $name . ' was not set.');
+    }
+
+    private function removeDirectory(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        foreach (scandir($directory) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $directory . DIRECTORY_SEPARATOR . $entry;
+
+            if (is_dir($path) && !is_link($path)) {
+                $this->removeDirectory($path);
+            } else {
+                unlink($path);
+            }
+        }
+
+        rmdir($directory);
+    }
+}

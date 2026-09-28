@@ -1,0 +1,119 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}{{ isNew ? 'New form' : 'Edit form' }} · Formvex{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    <nav class="fv-breadcrumbs" aria-label="Breadcrumbs">
+        <a href="{{ path('spoke_admin_home') }}">Overview</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ path('spoke_admin_forms') }}">Forms</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{{ isNew ? 'New configuration' : formData.display_name }}</span>
+    </nav>
+
+    {% include '@platform_ui/components/page_header.html.twig' with {
+        pageTitle: isNew ? 'Create form configuration' : 'Edit form configuration',
+        pageDescription: 'Store the approved page identity and mapping snapshot for one existing HTML form.',
+    } only %}
+
+    {% include '@platform_ui/components/feedback.html.twig' with {
+        message: message,
+        title: messageVariant == 'success' ? 'Saved' : 'Form configuration notice',
+        variant: messageVariant,
+    } only %}
+
+    {% if not details or not details.trashed %}<form class="fv-form" method="post" action="{{ isNew ? path('spoke_admin_form_create') : path('spoke_admin_form_update', {publicFormId: details.draft.publicId}) }}">
+        <input type="hidden" name="_token" value="{{ csrfToken }}">
+        {% if not isNew %}<input type="hidden" name="revision" value="{{ formData.revision }}">{% endif %}
+
+        <section class="fv-panel fv-settings-panel" aria-labelledby="form-identity-heading">
+            <header class="fv-section-heading">
+                <p class="fv-eyebrow">Stable identity</p>
+                <h2 id="form-identity-heading">Page and form marker</h2>
+                <p>Use the configured website alias, the canonical page path, and the existing HTML form id. A Formvex marker is used only when the form has no reliable id.</p>
+            </header>
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-display-name', name: 'display_name', label: 'Form name', value: formData.display_name, help: 'An administrator-facing name; it is not sent to visitors.', error: fieldErrors.display_name|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-page-host', name: 'page_host', label: 'Website host', value: formData.page_host, help: 'Use the exact bare or www alias saved in Settings.', error: fieldErrors.page_host|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-page-path', name: 'page_path', label: 'Page path', value: formData.page_path, help: 'Example: /contact. Query strings and fragments are ignored.', error: fieldErrors.page_path|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-marker', name: 'form_marker', label: 'HTML form id or Formvex marker', value: formData.form_marker, help: 'This marker must identify exactly one form on the configured page.', error: fieldErrors.form_marker|default(null)} only %}
+            </div>
+        </section>
+
+        <section class="fv-panel fv-settings-panel" aria-labelledby="form-delivery-heading">
+            <header class="fv-section-heading">
+                <p class="fv-eyebrow">Private delivery snapshot</p>
+                <h2 id="form-delivery-heading">Recipient and subject</h2>
+                <p>These values are stored privately and are copied into each immutable published version. They are never returned by public resolution.</p>
+            </header>
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-recipient', name: 'recipient', label: 'Recipient email', type: 'email', value: formData.recipient, help: 'One recipient is supported in V1.', error: fieldErrors.recipient|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-subject', name: 'subject', label: 'Email subject', value: formData.subject, help: 'Use a clear subject; this is required before publication.', error: fieldErrors.subject|default(null)} only %}
+            </div>
+        </section>
+
+        <section class="fv-panel fv-settings-panel" aria-labelledby="fields-heading">
+            <header class="fv-section-heading">
+                <p class="fv-eyebrow">Mapping contract</p>
+                <h2 id="fields-heading">Field definitions</h2>
+                <p>Unit 07 will normally populate this structure through authorized discovery. It is shown here so the Unit 06 persistence and publication contract can be reviewed without collecting visitor values.</p>
+            </header>
+            <div class="fv-field">
+                <label for="fields-json">Field definitions JSON</label>
+                <textarea class="fv-input" id="fields-json" name="fields_json" rows="14" spellcheck="false">{{ fieldsJson }}</textarea>
+                <p class="fv-field-help">Each field requires field_key, control_name, control_type, display_label, parameter_key, and may set ordinal, required, max_length, and choices. Keep this document below 64 KiB.</p>
+                {% if fieldErrors.fields_json|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.fields_json }}</p>{% endif %}
+            </div>
+        </section>
+
+        <div class="fv-action-bar">
+            <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_forms') }}">Cancel</a>
+            <button class="fv-button fv-button-primary" type="submit">Save draft</button>
+        </div>
+    </form>{% elseif details.trashed %}
+        <div class="fv-alert fv-alert-warning" role="status"><strong>This form is in Trash.</strong><span>Restore it before changing its draft or publishing a version.</span></div>
+    {% endif %}
+
+    {% if not isNew %}
+        <section class="fv-panel fv-settings-panel" aria-labelledby="published-heading">
+            <header class="fv-section-heading">
+                <p class="fv-eyebrow">Immutable history</p>
+                <h2 id="published-heading">Published versions</h2>
+            </header>
+            {% if details.publishedVersions is empty %}
+                <p>No published version exists. Complete the draft before publishing.</p>
+            {% else %}
+                <div class="fv-table-wrap"><table class="fv-table"><thead><tr><th scope="col">Version</th><th scope="col">State</th><th scope="col">Fields</th><th scope="col">Published</th></tr></thead><tbody>
+                {% for version in details.publishedVersions %}<tr><th scope="row">v{{ version.versionNumber }}</th><td>{{ version.state.value|capitalize }}</td><td>{{ version.fields|length }}</td><td>{{ version.publishedAt|date('Y-m-d H:i') }}</td></tr>{% endfor %}
+                </tbody></table></div>
+            {% endif %}
+            <form method="post" action="{{ path('spoke_admin_form_publish', {publicFormId: details.draft.publicId}) }}" class="fv-action-bar">
+                <input type="hidden" name="_token" value="{{ csrfToken }}">
+                <input type="hidden" name="revision" value="{{ details.draft.revision }}">
+                <button class="fv-button fv-button-primary" type="submit">Publish immutable version</button>
+            </form>
+        </section>
+
+        <section class="fv-panel fv-settings-panel" aria-labelledby="lifecycle-heading">
+            <header class="fv-section-heading"><p class="fv-eyebrow">Lifecycle</p><h2 id="lifecycle-heading">Trash</h2><p>Move this form to Trash before restoration or permanent deletion. Trash does not expire automatically.</p></header>
+            {% if details.trashed %}
+                <form method="post" action="{{ path('spoke_admin_form_restore', {publicFormId: details.draft.publicId}) }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="revision" value="{{ details.draft.revision }}">
+                    <button class="fv-button fv-button-secondary" type="submit">Restore form</button>
+                </form>
+                <form method="post" action="{{ path('spoke_admin_form_hard_delete', {publicFormId: details.draft.publicId}) }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="revision" value="{{ details.draft.revision }}">
+                    <label><input type="checkbox" name="confirm_permanent" value="1" required> I understand that permanent deletion cannot be undone.</label>
+                    <button class="fv-button fv-button-secondary" type="submit">Permanently delete</button>
+                </form>
+            {% else %}
+                <form method="post" action="{{ path('spoke_admin_form_trash', {publicFormId: details.draft.publicId}) }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="revision" value="{{ details.draft.revision }}">
+                    <button class="fv-button fv-button-secondary" type="submit">Move form to Trash</button>
+                </form>
+            {% endif %}
+        </section>
+    {% endif %}
+</div>
+{% endblock %}

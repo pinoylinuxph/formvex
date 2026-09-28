@@ -10,6 +10,7 @@ use Formvex\Spoke\Domain\Installation\Exception\InstallationFailure;
 use Formvex\Spoke\Migrations\Version000001CreateInstallationMetadata;
 use Formvex\Spoke\Migrations\Version000002CreateLocalAdministratorAuth;
 use Formvex\Spoke\Migrations\Version000003CreateInstallationSettings;
+use Formvex\Spoke\Migrations\Version000004CreateFormConfiguration;
 use PDO;
 use Throwable;
 
@@ -19,6 +20,7 @@ final readonly class SqliteMigrationRunner
         private Version000001CreateInstallationMetadata $initialMigration,
         private Version000002CreateLocalAdministratorAuth $administratorMigration,
         private Version000003CreateInstallationSettings $settingsMigration,
+        private Version000004CreateFormConfiguration $formConfigurationMigration,
         private Clock $clock,
     ) {
     }
@@ -33,7 +35,7 @@ final readonly class SqliteMigrationRunner
                 . ')',
             );
 
-            $migrations = [$this->initialMigration, $this->administratorMigration, $this->settingsMigration];
+            $migrations = [$this->initialMigration, $this->administratorMigration, $this->settingsMigration, $this->formConfigurationMigration];
             $knownVersions = array_map(
                 static fn (Migration $migration): string => $migration->version(),
                 $migrations,
