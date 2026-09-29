@@ -67,10 +67,7 @@ test('detects all approved controls and reports unsupported controls on a generi
   ]);
   expect(
     receivedPayload.forms[0].controls.find((control) => control.control_name === 'sector').choices,
-  ).toEqual([
-    { value: '', label: 'Choose one' },
-    { value: 'engineering', label: 'Engineering' },
-  ]);
+  ).toEqual([{ value: 'engineering', label: 'Engineering' }]);
   expect(receivedPayload.forms[1].unsupported_controls).toEqual([
     { control_name: 'search', control_type: 'search' },
     { control_name: '', control_type: 'missing_name' },

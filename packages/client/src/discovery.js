@@ -198,12 +198,18 @@ function controlLength(control) {
 
 function controlChoices(control, type) {
   if (type === 'select') {
-    return Array.from(control.querySelectorAll('option')).map((option) => ({
-      value: option.hasAttribute('value')
+    return Array.from(control.querySelectorAll('option')).flatMap((option) => {
+      const value = option.hasAttribute('value')
         ? option.getAttribute('value')
-        : option.textContent.trim(),
-      label: option.textContent.trim(),
-    }));
+        : option.textContent.trim();
+      const label = option.textContent.trim();
+
+      if (value === '' || label === '') {
+        return [];
+      }
+
+      return [{ value, label }];
+    });
   }
 
   if (type === 'radio' || type === 'checkbox') {
