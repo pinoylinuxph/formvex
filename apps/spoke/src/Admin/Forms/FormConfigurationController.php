@@ -373,14 +373,13 @@ final class FormConfigurationController extends AbstractController
         try {
             $payload = $this->discoveryRequestResolver->apply($request, $publicFormId !== null);
             $this->assertCsrf($context, $payload['csrf_token']);
-            $fields = $this->requestResolver->fieldDefinitions($payload['fields_json']);
             $sessionId = $request->cookies->get(self::SESSION_COOKIE);
 
             if (!is_string($sessionId) || $sessionId === '') {
                 throw new AdministratorFailure('session_missing');
             }
 
-            $details = $this->formDiscoveryService->applyCandidate($this->runtimeConfiguration->applicationRoot, $sessionId, $payload['candidate_id'], $publicFormId, $payload['selected_form_index'], $payload['revision'], $fields);
+            $details = $this->formDiscoveryService->applyCandidate($this->runtimeConfiguration->applicationRoot, $sessionId, $payload['candidate_id'], $publicFormId, $payload['selected_form_index'], $payload['revision'], $payload['fields']);
 
             return $this->redirectToRoute('spoke_admin_form_edit', ['publicFormId' => $details->draft->publicId]);
         } catch (AdministratorFailure) {
@@ -457,7 +456,6 @@ final class FormConfigurationController extends AbstractController
             'publicFormId' => $publicFormId,
             'candidates' => $candidates,
             'candidate' => $candidate,
-            'candidateFieldsJson' => $this->candidateFieldsJson($candidate, 0, $existingDetails?->draft),
             'candidateFieldsByForm' => $this->candidateFieldsByForm($candidate, $existingDetails?->draft),
             'removedMappingsByForm' => $this->removedMappingsByForm($candidate, $existingDetails?->draft),
             'draftRevision' => $draftRevision,
@@ -468,7 +466,7 @@ final class FormConfigurationController extends AbstractController
         ]);
     }
 
-    /** @return list<string> */
+    /** @return list<list<array<string, mixed>>> */
     private function candidateFieldsByForm(?DiscoveryCandidate $candidate, ?FormConfigurationRecord $existingDraft): array
     {
         if ($candidate === null) {
@@ -478,18 +476,19 @@ final class FormConfigurationController extends AbstractController
         $fields = [];
 
         foreach (array_keys($candidate->forms) as $index) {
-            $fields[] = $this->candidateFieldsJson($candidate, (int) $index, $existingDraft);
+            $fields[] = $this->candidateFields($candidate, (int) $index, $existingDraft);
         }
 
         return $fields;
     }
 
-    private function candidateFieldsJson(?DiscoveryCandidate $candidate, int $formIndex, ?FormConfigurationRecord $existingDraft = null): string
+    /** @return list<array<string, mixed>> */
+    private function candidateFields(?DiscoveryCandidate $candidate, int $formIndex, ?FormConfigurationRecord $existingDraft = null): array
     {
         $form = $candidate?->forms[$formIndex] ?? null;
 
         if ($form === null) {
-            return '';
+            return [];
         }
 
         $fields = [];
@@ -550,7 +549,7 @@ final class FormConfigurationController extends AbstractController
             ];
         }
 
-        return json_encode($fields, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        return $fields;
     }
 
     /** @return list<list<string>> */

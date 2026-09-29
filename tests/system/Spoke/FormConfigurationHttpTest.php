@@ -95,6 +95,7 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertSame(Response::HTTP_OK, $form->getStatusCode());
         self::assertStringContainsString('Contact form', $form->getContent());
         self::assertStringContainsString('name="revision" value="1"', $form->getContent());
+        self::assertStringContainsString('name="fields_json" rows="14" spellcheck="false" readonly', $form->getContent());
 
         $published = $this->request('POST', '/formvex/forms/' . $publicFormId . '/publish', [
             '_token' => $csrf,
@@ -206,6 +207,31 @@ final class FormConfigurationHttpTest extends KernelTestCase
                     'choices' => [],
                     'choice_group_key' => null,
                     'suggested_parameters' => ['email'],
+                ], [
+                    'discovery_key' => 'control-1-2',
+                    'control_name' => 'role',
+                    'control_type' => 'text',
+                    'display_label' => 'Role',
+                    'label_resolved' => true,
+                    'required' => false,
+                    'max_length' => 255,
+                    'choices' => [],
+                    'choice_group_key' => null,
+                    'suggested_parameters' => [],
+                ], [
+                    'discovery_key' => 'control-1-3',
+                    'control_name' => 'sector',
+                    'control_type' => 'select',
+                    'display_label' => 'Sub-vertical',
+                    'label_resolved' => true,
+                    'required' => false,
+                    'max_length' => 10000,
+                    'choices' => [
+                        ['value' => 'engineering', 'label' => 'Engineering'],
+                        ['value' => 'other', 'label' => 'Other'],
+                    ],
+                    'choice_group_key' => null,
+                    'suggested_parameters' => [],
                 ]],
                 'unsupported_controls' => [],
             ]],
@@ -227,23 +253,40 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertSame(Response::HTTP_OK, $review->getStatusCode());
         self::assertStringContainsString('Detected forms', (string) $review->getContent());
         self::assertStringContainsString('contact-form', (string) $review->getContent());
+        self::assertStringContainsString('name="fields[control-1-1][parameter_key]"', (string) $review->getContent());
+        self::assertStringContainsString('name="fields[control-1-2][custom_parameter_key]"', (string) $review->getContent());
+        self::assertStringContainsString('name="fields[control-1-3][choice_labels][0]"', (string) $review->getContent());
 
-        $fields = json_encode([[
-            'field_key' => 'control-1-1',
-            'control_name' => 'email',
-            'control_type' => 'email',
-            'display_label' => 'Email',
-            'parameter_key' => 'email',
-            'ordinal' => 0,
-            'required' => true,
-            'max_length' => 255,
-            'choices' => [],
-        ]], JSON_THROW_ON_ERROR);
         $apply = $this->request('POST', '/formvex/forms/new/discovery/apply', [
             '_token' => $csrf,
             'candidate_id' => $candidateId,
             'selected_form_index' => '0',
-            'fields_json' => $fields,
+            'fields' => [
+                'control-1-1' => [
+                    'parameter_key' => 'email',
+                    'custom_parameter_key' => '',
+                    'display_label' => 'Email',
+                    'required' => '1',
+                    'max_length' => '255',
+                    'choice_labels' => [],
+                ],
+                'control-1-2' => [
+                    'parameter_key' => 'custom',
+                    'custom_parameter_key' => 'role',
+                    'display_label' => 'Role',
+                    'required' => '0',
+                    'max_length' => '255',
+                    'choice_labels' => [],
+                ],
+                'control-1-3' => [
+                    'parameter_key' => 'custom',
+                    'custom_parameter_key' => 'sector',
+                    'display_label' => 'Sub-vertical',
+                    'required' => '0',
+                    'max_length' => '10000',
+                    'choice_labels' => ['Engineering', 'Other'],
+                ],
+            ],
         ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
         self::assertSame(Response::HTTP_FOUND, $apply->getStatusCode());
         self::assertMatchesRegularExpression('#/formvex/forms/[0-9a-f-]+$#', (string) $apply->headers->get('Location'));
@@ -277,7 +320,7 @@ final class FormConfigurationHttpTest extends KernelTestCase
         $statement->execute(['public_id' => $publicFormId]);
     }
 
-    /** @param array<string, string> $parameters @param array<string, string> $cookies @param array<string, string> $server */
+    /** @param array<string, mixed> $parameters @param array<string, string> $cookies @param array<string, string> $server */
     private function request(string $method, string $path, array $parameters = [], array $cookies = [], array $server = []): Response
     {
         $request = Request::create($path, $method, $parameters, $cookies, [], array_merge([

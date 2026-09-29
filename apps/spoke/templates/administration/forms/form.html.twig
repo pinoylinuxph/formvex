@@ -57,12 +57,12 @@
             <header class="fv-section-heading">
                 <p class="fv-eyebrow">Mapping contract</p>
                 <h2 id="fields-heading">Field definitions</h2>
-                <p>Unit 07 will normally populate this structure through authorized discovery. It is shown here so the Unit 06 persistence and publication contract can be reviewed without collecting visitor values.</p>
+                <p>Unit 07 populates this structure through authorized discovery. It is shown here as a read-only review of the saved draft; change mappings through the discovery review controls.</p>
             </header>
             <div class="fv-field">
-                <label for="fields-json">Field definitions JSON</label>
-                <textarea class="fv-input" id="fields-json" name="fields_json" rows="14" spellcheck="false">{{ fieldsJson }}</textarea>
-                <p class="fv-field-help">Each field requires field_key, control_name, control_type, display_label, parameter_key, and may set ordinal, required, max_length, and choices. Keep this document below 256 KiB.</p>
+                <label for="fields-json">Saved field definitions JSON (read-only)</label>
+                <textarea class="fv-input" id="fields-json" name="fields_json" rows="14" spellcheck="false" readonly aria-readonly="true">{{ fieldsJson }}</textarea>
+                <p class="fv-field-help">This is a read-only representation of the saved draft. Use authorized discovery to change field mappings, labels, requiredness, lengths, or choices.</p>
                 {% if fieldErrors.fields_json|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.fields_json }}</p>{% endif %}
             </div>
         </section>

@@ -11,6 +11,7 @@ use Formvex\Spoke\Domain\Administration\Contract\SecurityTokenGenerator;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationDetails;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationDraftData;
+use Formvex\Spoke\Domain\FormConfiguration\FormFieldChoice;
 use Formvex\Spoke\Domain\FormConfiguration\FormFieldDefinition;
 use Formvex\Spoke\Domain\FormConfiguration\PageIdentity;
 use Formvex\Spoke\Domain\FormDiscovery\Contract\FormDiscoveryStore;
@@ -111,7 +112,7 @@ final readonly class FormDiscoveryService
         return $candidate;
     }
 
-    /** @param list<FormFieldDefinition> $fields */
+    /** @param list<array{field_key: string, parameter_key: string, custom_parameter_key: string, display_label: string, required: string, max_length: string, choice_labels: list<string>}> $fieldInputs */
     public function applyCandidate(
         string $applicationRoot,
         string $sessionId,
@@ -119,7 +120,7 @@ final readonly class FormDiscoveryService
         ?string $publicFormId,
         int $selectedFormIndex,
         int $expectedRevision,
-        array $fields,
+        array $fieldInputs,
     ): FormConfigurationDetails {
         $paths = $this->paths($applicationRoot);
         $candidate = $this->candidate($applicationRoot, $sessionId, $candidateId);
@@ -133,6 +134,7 @@ final readonly class FormDiscoveryService
             throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Resolve every ambiguous or unsupported control before applying this form mapping.');
         }
 
+        $fields = $this->fieldsFromInput($form->controls, $fieldInputs);
         $this->assertFieldsMatch($form->controls, $fields);
         $page = PageIdentity::fromInput($candidate->host, $candidate->path, $form->formMarker);
 
@@ -184,11 +186,11 @@ final readonly class FormDiscoveryService
             $field = $fieldsByName[$control->controlName] ?? null;
 
             if ($field === null || $field->controlType !== $control->controlType) {
-                throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Each mapped control must match the discovered control name and type.', ['fields_json' => 'Review every discovered control and keep its control name and type unchanged.']);
+                throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Each mapped control must match the discovered control name and type.', ['fields' => 'Review every discovered control and keep its control name and type unchanged.']);
             }
 
             if ($field->parameterKey === 'unmapped') {
-                throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Every discovered control needs a confirmed built-in or custom parameter before applying the form.', ['fields_json' => 'Replace each unmapped parameter_key with a confirmed built-in or custom snake_case parameter.']);
+                throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Every discovered control needs a confirmed built-in or custom parameter before applying the form.', ['fields' => 'Choose a built-in or custom parameter for every discovered control.']);
             }
 
             $expectedChoices = array_column($control->choices, 'value');
@@ -197,9 +199,91 @@ final readonly class FormDiscoveryService
             sort($actualChoices);
 
             if ($expectedChoices !== $actualChoices) {
-                throw new FormDiscoveryFailure('discovery_choices_changed', 'Approved choice values must remain the values detected in the website HTML. You may edit their labels.', ['fields_json' => 'Restore the detected choice values before applying the mapping.']);
+                throw new FormDiscoveryFailure('discovery_choices_changed', 'Approved choice values must remain the values detected in the website HTML. You may edit their labels.', ['fields' => 'Restore the detected choice values before applying the mapping.']);
             }
         }
+    }
+
+    /**
+     * @param list<DiscoveryControl> $controls
+     * @param list<array{field_key: string, parameter_key: string, custom_parameter_key: string, display_label: string, required: string, max_length: string, choice_labels: list<string>}> $inputs
+     * @return list<FormFieldDefinition>
+     */
+    private function fieldsFromInput(array $controls, array $inputs): array
+    {
+        $inputByKey = [];
+
+        foreach ($inputs as $input) {
+            if (isset($inputByKey[$input['field_key']])) {
+                throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Each discovered control must have one mapping. Remove duplicate field mappings and try again.');
+            }
+
+            $inputByKey[$input['field_key']] = $input;
+        }
+
+        if (count($inputByKey) !== count($controls)) {
+            throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Every discovered control needs a confirmed built-in or custom parameter before applying the form.');
+        }
+
+        $fields = [];
+
+        foreach ($controls as $ordinal => $control) {
+            $input = $inputByKey[$control->discoveryKey] ?? null;
+
+            if ($input === null) {
+                throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Every discovered control needs a confirmed built-in or custom parameter before applying the form.');
+            }
+
+            $parameterKey = $input['parameter_key'];
+
+            if ($parameterKey === 'custom') {
+                $parameterKey = $input['custom_parameter_key'];
+            }
+
+            if ($parameterKey === '' || $parameterKey === 'unmapped') {
+                throw new FormDiscoveryFailure('discovery_mapping_incomplete', 'Every discovered control needs a confirmed built-in or custom parameter before applying the form.');
+            }
+
+            if (!in_array($input['required'], ['0', '1'], true)) {
+                throw new FormDiscoveryFailure('discovery_mapping_invalid', 'Choose whether each discovered control is required before applying the form.');
+            }
+
+            if (filter_var($input['max_length'], FILTER_VALIDATE_INT) === false) {
+                throw new FormDiscoveryFailure('discovery_mapping_invalid', 'Each discovered control needs a numeric maximum length between 1 and 10,000.');
+            }
+
+            $choiceLabels = $input['choice_labels'];
+
+            if (count($choiceLabels) !== count($control->choices)) {
+                throw new FormDiscoveryFailure('discovery_mapping_invalid', 'Review every detected choice label before applying the form.');
+            }
+
+            $choices = [];
+
+            foreach ($control->choices as $choiceIndex => $choice) {
+                $label = $choiceLabels[$choiceIndex] ?? '';
+
+                if ($label === '') {
+                    throw new FormDiscoveryFailure('discovery_mapping_invalid', 'Every detected choice needs a non-empty label before applying the form.');
+                }
+
+                $choices[] = new FormFieldChoice($choice['value'], $label);
+            }
+
+            $fields[] = new FormFieldDefinition(
+                $control->discoveryKey,
+                $control->controlName,
+                $control->controlType,
+                $input['display_label'],
+                $parameterKey,
+                $ordinal,
+                $input['required'] === '1',
+                (int) $input['max_length'],
+                $choices,
+            );
+        }
+
+        return $fields;
     }
 
     private function assertConfiguredHost(InstallationSettings $settings, string $host): void

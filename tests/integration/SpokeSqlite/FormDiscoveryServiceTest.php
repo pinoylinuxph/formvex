@@ -8,7 +8,6 @@ use Formvex\Spoke\Application\FormConfiguration\FormConfigurationService;
 use Formvex\Spoke\Application\FormDiscovery\FormDiscoveryService;
 use Formvex\Spoke\Domain\Administration\Contract\SecurityTokenGenerator;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
-use Formvex\Spoke\Domain\FormConfiguration\FormFieldDefinition;
 use Formvex\Spoke\Domain\FormDiscovery\Exception\FormDiscoveryFailure;
 use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
 use Formvex\Spoke\Domain\InstallationSettings\InstallationSettings;
@@ -100,7 +99,15 @@ final class FormDiscoveryServiceTest extends TestCase
 
         try {
             $this->service->applyCandidate($this->temporaryRoot, 'administrator-session', $candidate->candidateId, null, 0, 1, [
-                new FormFieldDefinition('email', 'email', 'email', 'Email', 'unmapped', 0, true, 255),
+                [
+                    'field_key' => 'control-1-1',
+                    'parameter_key' => 'unmapped',
+                    'custom_parameter_key' => '',
+                    'display_label' => 'Email',
+                    'required' => '1',
+                    'max_length' => '255',
+                    'choice_labels' => [],
+                ],
             ]);
             self::fail('An unresolved mapping must not be applied.');
         } catch (FormDiscoveryFailure $failure) {
@@ -108,7 +115,15 @@ final class FormDiscoveryServiceTest extends TestCase
         }
 
         $details = $this->service->applyCandidate($this->temporaryRoot, 'administrator-session', $candidate->candidateId, null, 0, 1, [
-            new FormFieldDefinition('email', 'email', 'email', 'Email', 'email', 0, true, 255),
+            [
+                'field_key' => 'control-1-1',
+                'parameter_key' => 'email',
+                'custom_parameter_key' => '',
+                'display_label' => 'Email',
+                'required' => '1',
+                'max_length' => '255',
+                'choice_labels' => [],
+            ],
         ]);
         self::assertSame('contact-form', $details->draft->page->formMarker);
         self::assertSame('email', $details->draft->fields[0]->parameterKey);
