@@ -33,6 +33,23 @@ test('field review buttons open and close discovery dialogs', async ({ page }) =
   await expect(dialog).toBeVisible();
   await expect(dialog.locator('#test-field-label')).toBeFocused();
 
+  await dialog.locator('.fv-modal-body').evaluate((body) => {
+    for (let index = 0; index < 30; index += 1) {
+      const choice = document.createElement('p');
+      choice.textContent = `Choice ${index + 1}`;
+      body.append(choice);
+    }
+  });
+
+  const scrollMetrics = await dialog.locator('.fv-modal-body').evaluate((body) => ({
+    clientHeight: body.clientHeight,
+    overflowY: window.getComputedStyle(body).overflowY,
+    scrollHeight: body.scrollHeight,
+  }));
+  expect(scrollMetrics.overflowY).toBe('auto');
+  expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+  await expect(dialog.getByRole('button', { name: 'Done reviewing' })).toBeVisible();
+
   await page.getByRole('button', { name: 'Done reviewing' }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Review field' })).toBeFocused();

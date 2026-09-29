@@ -1,0 +1,645 @@
+export const SUBMISSION_SCHEMA_VERSION = 1;
+
+const SUPPORTED_TYPES = new Set([
+  'text',
+  'email',
+  'tel',
+  'textarea',
+  'select',
+  'radio',
+  'checkbox',
+]);
+const MAX_FORMS = 25;
+const MAX_MARKER_LENGTH = 120;
+const MAX_PAGE_PATH_LENGTH = 2048;
+const MAX_FEEDBACK_LENGTH = 512;
+const ATTEMPT_KEY_PREFIX = 'formvex:attempt:';
+const FORM_MARKER_PATTERN = /^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/u;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+export function findFormCandidates(documentRef) {
+  const forms = Array.from(documentRef?.querySelectorAll?.('form') ?? []);
+  const idCounts = new Map();
+
+  for (const form of forms) {
+    const id = (form.getAttribute('id') || '').trim();
+
+    if (id !== '') {
+      idCounts.set(id, (idCounts.get(id) || 0) + 1);
+    }
+  }
+
+  return forms.slice(0, MAX_FORMS).flatMap((form) => {
+    const marker = formMarker(form, idCounts);
+
+    if (marker === null || hasUnsupportedControls(form)) {
+      return [];
+    }
+
+    return [{ form, marker }];
+  });
+}
+
+export async function initializeFormIntegration({
+  documentRef = globalThis.document,
+  windowRef = globalThis.window,
+  fetchImpl = windowRef?.fetch?.bind(windowRef) || globalThis.fetch,
+  storageRef = sessionStorageFor(windowRef),
+  cryptoRef = windowRef?.crypto || globalThis.crypto,
+} = {}) {
+  if (!documentRef || typeof fetchImpl !== 'function') {
+    return [];
+  }
+
+  const candidates = findFormCandidates(documentRef);
+  const attached = [];
+
+  await Promise.all(
+    candidates.map(async ({ form, marker }) => {
+      const resolution = await resolveForm({
+        marker,
+        locationRef: windowRef?.location,
+        fetchImpl,
+      });
+
+      if (resolution === null) {
+        return;
+      }
+
+      attachForm(form, resolution, {
+        documentRef,
+        fetchImpl,
+        storageRef,
+        cryptoRef,
+        pagePath: windowRef?.location?.pathname || '/',
+      });
+      attached.push(form);
+    }),
+  );
+
+  return attached;
+}
+
+export async function resolveForm({ marker, locationRef, fetchImpl }) {
+  if (
+    typeof fetchImpl !== 'function' ||
+    !isValidMarker(marker) ||
+    typeof locationRef?.pathname !== 'string' ||
+    !isValidPagePath(locationRef.pathname)
+  ) {
+    return null;
+  }
+
+  const query = new URLSearchParams({
+    schema_version: '1',
+    page_path: locationRef.pathname || '/',
+    form_marker: marker,
+  });
+
+  try {
+    const response = await fetchImpl(`/formvex/api/v1/forms/resolve?${query.toString()}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'omit',
+    });
+
+    if (response.status !== 200) {
+      return null;
+    }
+
+    const payload = await response.json();
+
+    if (!isResolutionPayload(payload, marker)) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+export function collectSubmissionData(form) {
+  const fields = {};
+  const fieldShape = [];
+  const shapeKeys = new Set();
+  const controls = Array.from(form?.querySelectorAll?.('input, textarea, select') ?? []);
+
+  for (const control of controls) {
+    const name = (control.getAttribute('name') || '').trim();
+    const type = controlType(control);
+
+    if (name === '' || !SUPPORTED_TYPES.has(type) || control.disabled) {
+      continue;
+    }
+
+    const shapeKey = `${name}:${type}`;
+
+    if (!shapeKeys.has(shapeKey)) {
+      shapeKeys.add(shapeKey);
+      fieldShape.push({ control_name: name, control_type: type });
+    }
+
+    if ((type === 'radio' || type === 'checkbox') && !control.checked) {
+      continue;
+    }
+
+    const value = controlValue(control, type);
+
+    if (value === null) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      fields[name] = [...(Array.isArray(fields[name]) ? fields[name] : []), ...value];
+      continue;
+    }
+
+    fields[name] = value;
+  }
+
+  return { fields, field_shape: fieldShape };
+}
+
+export function createSubmissionEnvelope(form, resolution, attemptId) {
+  const { fields, field_shape: fieldShape } = collectSubmissionData(form);
+
+  return {
+    schema_version: SUBMISSION_SCHEMA_VERSION,
+    attempt_id: attemptId,
+    configuration_version: resolution.configuration_version,
+    form_marker: resolution.form_marker,
+    fields,
+    field_shape: fieldShape,
+  };
+}
+
+export function mapSubmissionResponse(status, payload) {
+  if (status === 202 && isAcceptedPayload(payload)) {
+    return {
+      state: 'accepted',
+      message: boundedText(
+        payload.acknowledgement || payload.message,
+        'Your message has been received.',
+      ),
+    };
+  }
+
+  const error = isObject(payload?.error) ? payload.error : {};
+  const message = boundedText(error.message, defaultMessage(status));
+  const fieldErrors = Array.isArray(error.fields)
+    ? error.fields.flatMap((field) => {
+        if (!isObject(field) || typeof field.field !== 'string') {
+          return [];
+        }
+
+        return [
+          {
+            field: field.field.slice(0, MAX_MARKER_LENGTH),
+            message: boundedText(field.message, message),
+          },
+        ];
+      })
+    : [];
+
+  if (status === 409) {
+    return { state: 'unavailable', message, invalidateAttempt: true, fieldErrors };
+  }
+
+  if (status === 413) {
+    return { state: 'rejected', message, fieldErrors };
+  }
+
+  if (status === 422) {
+    return { state: 'rejected', message, fieldErrors };
+  }
+
+  if (status === 429) {
+    return { state: 'rejected', message, fieldErrors };
+  }
+
+  if (status >= 500 && status <= 599) {
+    return { state: 'uncertain', message: defaultMessage(status), fieldErrors };
+  }
+
+  return { state: 'uncertain', message: defaultMessage(status), fieldErrors };
+}
+
+function attachForm(form, resolution, { documentRef, fetchImpl, storageRef, cryptoRef, pagePath }) {
+  let state = 'ready';
+  let attemptId = null;
+  let attemptInvalidated = false;
+  const feedbackInstanceId = `formvex-${safeIdPart(resolution.public_form_id)}-${safeIdPart(
+    resolution.form_marker,
+  )}`;
+  const originalDisabledState = new Map();
+  const showInvalidFeedback = () => {
+    state = 'invalid';
+    renderFeedback(form, documentRef, {
+      state: 'rejected',
+      message: 'Please correct the highlighted fields and try again.',
+      fieldErrors: [],
+    });
+  };
+  const invalid = () => {
+    if (state !== 'submitting') {
+      showInvalidFeedback();
+    }
+  };
+
+  const submit = (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    if (state === 'submitting') {
+      return;
+    }
+
+    if (!form.checkValidity()) {
+      showInvalidFeedback();
+      focusInvalidControl(form);
+      restoreSubmitControls(form, originalDisabledState);
+      return;
+    }
+
+    state = 'submitting';
+    disableSubmitControls(form, originalDisabledState);
+
+    let envelope;
+
+    try {
+      attemptId = attemptInvalidated
+        ? null
+        : getAttemptId(resolution, pagePath, storageRef, cryptoRef, attemptId);
+      attemptInvalidated = false;
+      envelope = createSubmissionEnvelope(form, resolution, attemptId);
+    } catch {
+      state = 'unavailable';
+      renderFeedback(form, documentRef, {
+        state,
+        message: 'Formvex could not prepare this message. Please try again.',
+        fieldErrors: [],
+      });
+      restoreSubmitControls(form, originalDisabledState);
+      return;
+    }
+
+    void submitEnvelope(resolution, envelope, {
+      fetchImpl,
+    }).then((result) => {
+      state = result.state;
+
+      if (result.invalidateAttempt) {
+        attemptInvalidated = true;
+        removeAttemptId(resolution, pagePath, storageRef);
+        attemptId = null;
+      }
+
+      renderFeedback(form, documentRef, result);
+      clearFieldErrors(form);
+
+      if (result.state === 'accepted') {
+        form.reset();
+        removeAttemptId(resolution, pagePath, storageRef);
+        attemptId = null;
+      } else {
+        renderFieldErrors(form, result.fieldErrors || [], documentRef, feedbackInstanceId);
+      }
+
+      restoreSubmitControls(form, originalDisabledState);
+    });
+  };
+
+  form.addEventListener('submit', submit, true);
+  form.addEventListener('invalid', invalid, true);
+}
+
+async function submitEnvelope(resolution, envelope, { fetchImpl }) {
+  try {
+    const response = await fetchImpl(
+      `/formvex/api/v1/forms/${encodeURIComponent(resolution.public_form_id)}/submissions`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        credentials: 'omit',
+        body: JSON.stringify(envelope),
+      },
+    );
+    const payload = await response.json();
+
+    return mapSubmissionResponse(response.status, payload);
+  } catch {
+    return {
+      state: 'uncertain',
+      message:
+        'Formvex could not confirm whether your message was received. Check your connection and try again.',
+      fieldErrors: [],
+    };
+  }
+}
+
+function formMarker(form, idCounts) {
+  const explicitMarker = (form.getAttribute('data-formvex') || '').trim();
+
+  if (explicitMarker !== '') {
+    return isValidMarker(explicitMarker) ? explicitMarker : null;
+  }
+
+  const id = (form.getAttribute('id') || '').trim();
+
+  return id !== '' && idCounts.get(id) === 1 && isValidMarker(id) ? id : null;
+}
+
+function hasUnsupportedControls(form) {
+  return Array.from(form.querySelectorAll('input, textarea, select')).some((control) => {
+    const type = controlType(control);
+
+    return (control.getAttribute('name') || '').trim() === '' || !SUPPORTED_TYPES.has(type);
+  });
+}
+
+function controlType(control) {
+  const tagName = control.tagName.toLowerCase();
+
+  if (tagName === 'textarea') {
+    return 'textarea';
+  }
+
+  if (tagName === 'select') {
+    return 'select';
+  }
+
+  return (control.getAttribute('type') || 'text').toLowerCase();
+}
+
+function controlValue(control, type) {
+  if (type === 'checkbox') {
+    return [control.getAttribute('value') || 'on'];
+  }
+
+  if (type === 'radio') {
+    return control.getAttribute('value') || 'on';
+  }
+
+  if (type === 'select') {
+    const options = Array.from(control.selectedOptions || []).map((option) => option.value);
+
+    return control.multiple ? options : options[0] || '';
+  }
+
+  return typeof control.value === 'string' ? control.value : '';
+}
+
+function isResolutionPayload(payload, marker) {
+  return (
+    isObject(payload) &&
+    payload.schema_version === 1 &&
+    typeof payload.public_form_id === 'string' &&
+    payload.public_form_id.length > 0 &&
+    payload.public_form_id.length <= 128 &&
+    Number.isInteger(payload.configuration_version) &&
+    payload.configuration_version > 0 &&
+    payload.form_marker === marker
+  );
+}
+
+function isAcceptedPayload(payload) {
+  return (
+    isObject(payload) &&
+    payload.schema_version === SUBMISSION_SCHEMA_VERSION &&
+    typeof payload.receipt_id === 'string' &&
+    payload.receipt_id.length > 0 &&
+    payload.receipt_id.length <= 128 &&
+    (typeof payload.acknowledgement === 'string' || typeof payload.message === 'string')
+  );
+}
+
+function getAttemptId(resolution, pagePath, storageRef, cryptoRef, currentAttemptId) {
+  if (isValidUuid(currentAttemptId)) {
+    return currentAttemptId;
+  }
+
+  const key = attemptStorageKey(resolution, pagePath);
+
+  try {
+    const stored = storageRef?.getItem(key);
+
+    if (isValidUuid(stored)) {
+      return stored;
+    }
+  } catch {
+    // Continue with in-memory correlation when browser storage is unavailable.
+  }
+
+  const generated = cryptoRef?.randomUUID?.();
+
+  if (!isValidUuid(generated)) {
+    throw new Error('Formvex requires crypto.randomUUID for submission attempts.');
+  }
+
+  try {
+    storageRef?.setItem(key, generated);
+  } catch {
+    // The generated opaque id remains in the form integration closure.
+  }
+
+  return generated;
+}
+
+function removeAttemptId(resolution, pagePath, storageRef) {
+  try {
+    storageRef?.removeItem(attemptStorageKey(resolution, pagePath));
+  } catch {
+    // Browser storage cleanup is best effort and never blocks the form.
+  }
+}
+
+function attemptStorageKey(resolution, pagePath) {
+  return `${ATTEMPT_KEY_PREFIX}${resolution.public_form_id}:${pagePath}:${resolution.form_marker}`;
+}
+
+function disableSubmitControls(form, originalDisabledState) {
+  for (const control of submitControls(form)) {
+    originalDisabledState.set(control, control.disabled);
+    control.disabled = true;
+  }
+}
+
+function restoreSubmitControls(form, originalDisabledState) {
+  for (const control of submitControls(form)) {
+    control.disabled = originalDisabledState.get(control) ?? control.disabled;
+  }
+
+  originalDisabledState.clear();
+}
+
+function submitControls(form) {
+  return Array.from(form.querySelectorAll('button, input')).filter((control) => {
+    const type = (control.getAttribute('type') || 'submit').toLowerCase();
+
+    return type === 'submit';
+  });
+}
+
+function focusInvalidControl(form) {
+  const invalid = form.querySelector(':invalid');
+
+  if (typeof invalid?.focus === 'function') {
+    invalid.focus();
+  }
+}
+
+function renderFeedback(form, documentRef, result) {
+  const feedback = feedbackElement(form, documentRef);
+
+  feedback.setAttribute('role', result.state === 'accepted' ? 'status' : 'alert');
+  feedback.setAttribute('aria-live', result.state === 'accepted' ? 'polite' : 'assertive');
+  feedback.textContent = boundedText(result.message, defaultMessage(500));
+  feedback.hidden = false;
+}
+
+function feedbackElement(form, documentRef) {
+  const existing = form.querySelector('[data-formvex-feedback]');
+
+  if (existing) {
+    return existing;
+  }
+
+  const feedback = documentRef.createElement('div');
+  feedback.setAttribute('data-formvex-feedback', 'true');
+  feedback.className = 'formvex-feedback';
+  form.append(feedback);
+
+  return feedback;
+}
+
+function clearFieldErrors(form) {
+  for (const error of form.querySelectorAll('[data-formvex-field-error]')) {
+    const control = Array.from(form.querySelectorAll('input, textarea, select')).find((candidate) =>
+      (candidate.getAttribute('aria-describedby') || '').split(/\s+/u).includes(error.id),
+    );
+
+    if (control) {
+      const previousDescribedBy = error.getAttribute('data-formvex-previous-describedby');
+      const previousInvalid = error.getAttribute('data-formvex-previous-invalid');
+
+      if (previousDescribedBy === '__absent__') {
+        control.removeAttribute('aria-describedby');
+      } else {
+        control.setAttribute('aria-describedby', previousDescribedBy || '');
+      }
+
+      if (previousInvalid === '__absent__') {
+        control.removeAttribute('aria-invalid');
+      } else {
+        control.setAttribute('aria-invalid', previousInvalid || 'true');
+      }
+    }
+
+    error.remove();
+  }
+}
+
+function renderFieldErrors(form, fieldErrors, documentRef, feedbackInstanceId) {
+  fieldErrors.forEach((fieldError, index) => {
+    const control = Array.from(form.querySelectorAll('input, textarea, select')).find(
+      (candidate) => candidate.getAttribute('name') === fieldError.field,
+    );
+
+    if (!control) {
+      return;
+    }
+
+    const error = documentRef.createElement('span');
+    const errorId = `formvex-field-error-${feedbackInstanceId}-${index + 1}`;
+    const previousDescribedBy = control.getAttribute('aria-describedby');
+    const previousInvalid = control.getAttribute('aria-invalid');
+
+    error.id = errorId;
+    error.setAttribute('data-formvex-field-error', 'true');
+    error.setAttribute(
+      'data-formvex-previous-describedby',
+      previousDescribedBy === null ? '__absent__' : previousDescribedBy,
+    );
+    error.setAttribute(
+      'data-formvex-previous-invalid',
+      previousInvalid === null ? '__absent__' : previousInvalid,
+    );
+    error.textContent = boundedText(fieldError.message, 'Check this field and try again.');
+    control.setAttribute('aria-invalid', 'true');
+    control.setAttribute(
+      'aria-describedby',
+      previousDescribedBy === null ? errorId : `${previousDescribedBy} ${errorId}`,
+    );
+    control.insertAdjacentElement('afterend', error);
+  });
+}
+
+function defaultMessage(status) {
+  if (status === 413) {
+    return 'This message is too large to send. Shorten it and try again.';
+  }
+
+  if (status === 422) {
+    return 'Please correct the highlighted fields and try again.';
+  }
+
+  if (status === 409) {
+    return 'This form changed or is temporarily unavailable. Review it and try again.';
+  }
+
+  if (status === 429) {
+    return 'Too many attempts were made. Wait a moment and try again.';
+  }
+
+  if (status >= 500 && status <= 599) {
+    return 'Formvex could not accept your message. Please try again.';
+  }
+
+  return 'Formvex could not confirm whether your message was received. Check your connection and try again.';
+}
+
+function boundedText(value, fallback) {
+  return typeof value === 'string' && value.trim() !== ''
+    ? value.trim().slice(0, MAX_FEEDBACK_LENGTH)
+    : fallback;
+}
+
+function isValidMarker(value) {
+  return (
+    typeof value === 'string' &&
+    value.length <= MAX_MARKER_LENGTH &&
+    FORM_MARKER_PATTERN.test(value)
+  );
+}
+
+function isValidPagePath(value) {
+  return value.length > 0 && value.length <= MAX_PAGE_PATH_LENGTH && value.startsWith('/');
+}
+
+function safeIdPart(value) {
+  return encodeURIComponent(value).replaceAll('%', '-');
+}
+
+function isValidUuid(value) {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function sessionStorageFor(windowRef) {
+  try {
+    return windowRef?.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  void initializeFormIntegration();
+}

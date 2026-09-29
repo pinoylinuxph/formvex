@@ -866,14 +866,14 @@ h2 {
   margin-bottom: var(--fv-space-0);
 }
 
-.fv-modal-description,
 .fv-modal-body {
+  min-height: 0;
   padding-right: var(--fv-space-5);
   padding-left: var(--fv-space-5);
 }
 
 .fv-modal-description {
-  margin: var(--fv-space-4) var(--fv-space-5) var(--fv-space-0);
+  margin: var(--fv-space-0) var(--fv-space-0) var(--fv-space-4);
   padding: var(--fv-space-0);
   color: var(--fv-color-content-secondary);
 }

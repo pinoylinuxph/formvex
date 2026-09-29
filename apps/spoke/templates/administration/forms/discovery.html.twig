@@ -147,8 +147,8 @@
                                         </div>
                                         <button class="fv-icon-button" type="button" data-modal-close aria-label="Close field review">×</button>
                                     </header>
-                                    <p class="fv-modal-description"><code>{{ field.control_name }}</code> · {{ field.control_type }}</p>
                                     <div class="fv-modal-body">
+                                        <p class="fv-modal-description"><code>{{ field.control_name }}</code> · {{ field.control_type }}</p>
                                         <div class="fv-settings-grid">
                                             {% include '@platform_ui/components/settings_field.html.twig' with {
                                                 id: 'field-' ~ formIndex ~ '-' ~ fieldIndex ~ '-label',

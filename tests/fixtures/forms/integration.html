@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Formvex integration fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>Formvex integration fixture</h1>
+      <form id="contact-form">
+        <label for="integration-name">Name</label>
+        <input id="integration-name" name="name" type="text" required />
+        <label for="integration-email">Email</label>
+        <input id="integration-email" name="email" type="email" required />
+        <fieldset>
+          <legend>Interests</legend>
+          <label><input type="checkbox" name="interests" value="hosting" /> Hosting</label>
+          <label><input type="checkbox" name="interests" value="support" /> Support</label>
+        </fieldset>
+        <button type="submit">Send message</button>
+      </form>
+      <form id="provided-form" data-formvex="provided-form">
+        <label for="provided-name">Name</label>
+        <input id="provided-name" name="name" type="text" required />
+        <div data-formvex-feedback hidden></div>
+        <button type="submit">Send provided</button>
+      </form>
+      <form id="unrelated-form">
+        <label for="unrelated-search">Search</label>
+        <input id="unrelated-search" name="search" type="search" />
+        <button type="submit">Search</button>
+      </form>
+    </main>
+  </body>
+</html>

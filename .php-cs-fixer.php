@@ -16,7 +16,9 @@ $finder = Finder::create()
     ])
     ->exclude([
         'var',
-    ]);
+    ])
+    // Symfony regenerates this application-only type-reference artifact without strict types.
+    ->notPath('spoke/config/reference.php');
 
 return new Config()
     ->setRiskyAllowed(true)
