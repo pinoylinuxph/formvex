@@ -172,11 +172,75 @@ const initialiseSmtpPortDefaults = () => {
   });
 };
 
+const initialiseDiscoveryDialogs = () => {
+  document.documentElement.classList.add('fv-js');
+
+  const dialogs = [...document.querySelectorAll('[data-discovery-dialog]')];
+
+  if (dialogs.length === 0) {
+    return;
+  }
+
+  let activeDialog = null;
+  let activeOpener = null;
+
+  const closeDialog = (dialog) => {
+    dialog.classList.remove('is-open');
+    dialog.setAttribute('aria-hidden', 'true');
+
+    if (activeDialog === dialog) {
+      activeDialog = null;
+      activeOpener?.focus();
+      activeOpener = null;
+    }
+  };
+
+  dialogs.forEach((dialog) => {
+    dialog.setAttribute('aria-hidden', 'true');
+    dialog.querySelectorAll('[data-modal-close]').forEach((control) => {
+      control.addEventListener('click', () => closeDialog(dialog));
+    });
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) {
+        closeDialog(dialog);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-discovery-dialog-open]').forEach((control) => {
+    const targetId = control.getAttribute('data-discovery-dialog-open');
+    const dialog = targetId ? document.getElementById(targetId) : null;
+
+    if (!(control instanceof HTMLButtonElement) || !(dialog instanceof HTMLElement)) {
+      return;
+    }
+
+    control.addEventListener('click', () => {
+      if (activeDialog instanceof HTMLElement) {
+        closeDialog(activeDialog);
+      }
+
+      activeDialog = dialog;
+      activeOpener = control;
+      dialog.classList.add('is-open');
+      dialog.setAttribute('aria-hidden', 'false');
+      (dialog.querySelector('input, select, textarea') ?? dialog.querySelector('button'))?.focus();
+    });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && activeDialog instanceof HTMLElement) {
+      closeDialog(activeDialog);
+    }
+  });
+};
+
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
     initialiseTheme();
     initialiseSidebar();
     initialiseSmtpPortDefaults();
+    initialiseDiscoveryDialogs();
   });
 }
 

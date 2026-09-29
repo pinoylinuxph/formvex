@@ -23,7 +23,31 @@
         <a href="/formvex/forms">Forms</a>
       </nav>
     </aside>
-    <main id="main-content">Shell fixture</main>
+    <main id="main-content">
+      <button type="button" data-discovery-dialog-open="test-discovery-dialog">Review field</button>
+      <section
+        class="fv-modal fv-discovery-dialog"
+        id="test-discovery-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="test-discovery-dialog-title"
+        data-discovery-dialog
+      >
+        <div class="fv-modal-panel">
+          <header class="fv-modal-header">
+            <h2 id="test-discovery-dialog-title">Review field</h2>
+            <button type="button" data-modal-close aria-label="Close field review">×</button>
+          </header>
+          <div class="fv-modal-body">
+            <label for="test-field-label">Display label</label>
+            <input id="test-field-label" value="Email" />
+          </div>
+          <footer class="fv-modal-footer">
+            <button type="button" data-modal-close>Done reviewing</button>
+          </footer>
+        </div>
+      </section>
+    </main>
     <script type="module" src="/build/spoke-admin.js"></script>
   </body>
 </html>

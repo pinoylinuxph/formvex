@@ -86,6 +86,15 @@
                         </div>
                     {% endif %}
 
+                    {% set builtInParameters = {
+                        full_name: 'Full name',
+                        email: 'Email',
+                        phone: 'Phone',
+                        company: 'Company',
+                        subject: 'Subject',
+                        message: 'Message'
+                    } %}
+                    {% set fieldDefinitions = candidateFieldsByForm[loop.index0]|default([]) %}
                     <div class="fv-table-wrap">
                         <table class="fv-table">
                             <caption class="fv-visually-hidden">Detected controls for {{ form.displayName }}</caption>
@@ -96,16 +105,22 @@
                                 <th scope="col">Label</th>
                                 <th scope="col">Required</th>
                                 <th scope="col">Suggestions</th>
+                                <th scope="col">Mapped parameter</th>
+                                <th scope="col">Action</th>
                             </tr>
                             </thead>
                             <tbody>
                             {% for control in form.controls %}
+                                {% set field = fieldDefinitions[loop.index0] %}
+                                {% set isBuiltIn = field.parameter_key in builtInParameters|keys %}
                                 <tr>
                                     <th scope="row"><code>{{ control.controlName }}</code></th>
                                     <td>{{ control.controlType }}</td>
                                     <td>{{ control.displayLabel }}{% if not control.labelResolved %} <span class="fv-status-badge">Needs label review</span>{% endif %}</td>
                                     <td>{{ control.required ? 'Yes' : 'No' }}</td>
                                     <td>{% if control.suggestedParameters is empty %}<span class="fv-status-badge">Custom parameter required</span>{% else %}{{ control.suggestedParameters|join(', ') }}{% endif %}</td>
+                                    <td>{% if isBuiltIn %}{{ builtInParameters[field.parameter_key] }}{% else %}<span class="fv-status-badge">Needs mapping</span>{% endif %}</td>
+                                    <td><button class="fv-button fv-button-secondary fv-button-small" type="button" data-discovery-dialog-open="discovery-dialog-{{ formIndex }}-{{ loop.index }}">Review</button></td>
                                 </tr>
                             {% endfor %}
                             </tbody>
@@ -117,86 +132,79 @@
                         <input type="hidden" name="candidate_id" value="{{ candidate.candidateId }}">
                         <input type="hidden" name="selected_form_index" value="{{ loop.index0 }}">
                         {% if publicFormId %}<input type="hidden" name="revision" value="{{ draftRevision }}">{% endif %}
-                        <section class="fv-panel" aria-labelledby="mapping-heading-{{ loop.index }}">
-                            <div class="fv-section-heading">
-                                <p class="fv-eyebrow">Mapping review</p>
-                                <h4 id="mapping-heading-{{ loop.index }}">Confirm where each field belongs</h4>
-                                <p>Select a built-in parameter or choose <strong>Custom parameter</strong> and enter a lowercase <code>snake_case</code> key. Every detected field must be mapped before it can be applied.</p>
-                            </div>
-
-                            {% set builtInParameters = {
-                                full_name: 'Full name',
-                                email: 'Email',
-                                phone: 'Phone',
-                                company: 'Company',
-                                subject: 'Subject',
-                                message: 'Message'
-                            } %}
-
-                            {% for field in candidateFieldsByForm[loop.index0]|default([]) %}
-                                {% set fieldIndex = loop.index %}
-                                {% set isBuiltIn = field.parameter_key in builtInParameters|keys %}
-                                {% set selectedParameter = isBuiltIn ? field.parameter_key : 'custom' %}
-                                {% set customParameter = (isBuiltIn or field.parameter_key == 'unmapped') ? '' : field.parameter_key %}
-                                <fieldset class="fv-panel fv-settings-panel" aria-labelledby="field-heading-{{ formIndex }}-{{ fieldIndex }}">
-                                    <legend id="field-heading-{{ formIndex }}-{{ fieldIndex }}">{{ field.display_label }}</legend>
-                                    <p class="fv-page-note"><code>{{ field.control_name }}</code> · {{ field.control_type }}</p>
-                                    <div class="fv-settings-grid">
-                                        {% include '@platform_ui/components/settings_field.html.twig' with {
-                                            id: 'field-' ~ formIndex ~ '-' ~ fieldIndex ~ '-label',
-                                            name: 'fields[' ~ field.field_key ~ '][display_label]',
-                                            label: 'Display label',
-                                            value: field.display_label,
-                                            help: 'This label is used in the delivered email.',
-                                            error: null
-                                        } only %}
-                                        <div class="fv-field">
-                                            <label for="field-{{ formIndex }}-{{ fieldIndex }}-parameter">Map to parameter</label>
-                                            <select class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-parameter" name="fields[{{ field.field_key }}][parameter_key]" required>
-                                                <option value="">Choose a parameter</option>
-                                                {% for parameterKey, parameterLabel in builtInParameters %}
-                                                    <option value="{{ parameterKey }}"{% if selectedParameter == parameterKey %} selected{% endif %}>{{ parameterLabel }} ({{ parameterKey }})</option>
-                                                {% endfor %}
-                                                <option value="custom"{% if selectedParameter == 'custom' %} selected{% endif %}>Custom parameter</option>
-                                            </select>
-                                            <p class="fv-field-help">Suggestions are shown in the detected-controls table; confirm the final destination here.</p>
+                        <p class="fv-page-note"><strong>Review each row before applying.</strong> JavaScript opens each editor as a dialog. If JavaScript is unavailable, the editors appear below the table.</p>
+                        {% for field in fieldDefinitions %}
+                            {% set fieldIndex = loop.index %}
+                            {% set isBuiltIn = field.parameter_key in builtInParameters|keys %}
+                            {% set selectedParameter = isBuiltIn ? field.parameter_key : 'custom' %}
+                            {% set customParameter = (isBuiltIn or field.parameter_key == 'unmapped') ? '' : field.parameter_key %}
+                            <section class="fv-modal fv-discovery-dialog" id="discovery-dialog-{{ formIndex }}-{{ fieldIndex }}" role="dialog" aria-modal="true" aria-labelledby="field-heading-{{ formIndex }}-{{ fieldIndex }}" data-discovery-dialog>
+                                <div class="fv-modal-panel">
+                                    <header class="fv-modal-header">
+                                        <div>
+                                            <p class="fv-eyebrow">Field {{ fieldIndex }} of {{ fieldDefinitions|length }}</p>
+                                            <h2 id="field-heading-{{ formIndex }}-{{ fieldIndex }}">{{ field.display_label }}</h2>
                                         </div>
-                                        <div class="fv-field">
-                                            <label for="field-{{ formIndex }}-{{ fieldIndex }}-custom">Custom parameter key</label>
-                                            <input class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-custom" name="fields[{{ field.field_key }}][custom_parameter_key]" value="{{ customParameter }}" maxlength="80" pattern="[a-z][a-z0-9_]{0,79}" placeholder="for_example_role">
-                                            <p class="fv-field-help">Use this only for Custom parameter. Use lowercase letters, numbers, and underscores.</p>
-                                        </div>
-                                        <div class="fv-field">
-                                            <label for="field-{{ formIndex }}-{{ fieldIndex }}-required">Required field</label>
-                                            <select class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-required" name="fields[{{ field.field_key }}][required]">
-                                                <option value="0"{% if not field.required %} selected{% endif %}>No</option>
-                                                <option value="1"{% if field.required %} selected{% endif %}>Yes</option>
-                                            </select>
-                                            <p class="fv-field-help">Detected from the website HTML and adjustable before saving.</p>
-                                        </div>
-                                        <div class="fv-field">
-                                            <label for="field-{{ formIndex }}-{{ fieldIndex }}-length">Maximum length</label>
-                                            <input class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-length" name="fields[{{ field.field_key }}][max_length]" type="number" min="1" max="10000" value="{{ field.max_length }}" required>
-                                            <p class="fv-field-help">Allowed range: 1 to 10,000 characters.</p>
-                                        </div>
-                                    </div>
-                                    {% if field.choices is not empty %}
-                                        <div class="fv-field">
-                                            <h5>Allowed choices</h5>
-                                            <p class="fv-field-help">Choice values are locked to the detected HTML values. You may adjust the labels used in the email.</p>
-                                            <div class="fv-settings-grid">
-                                                {% for choice in field.choices %}
-                                                    <div class="fv-field">
-                                                        <label for="field-{{ formIndex }}-{{ fieldIndex }}-choice-{{ loop.index }}">Choice label for <code>{{ choice.value }}</code></label>
-                                                        <input class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-choice-{{ loop.index }}" name="fields[{{ field.field_key }}][choice_labels][{{ loop.index0 }}]" value="{{ choice.label }}" maxlength="256" required>
-                                                    </div>
-                                                {% endfor %}
+                                        <button class="fv-icon-button" type="button" data-modal-close aria-label="Close field review">×</button>
+                                    </header>
+                                    <p class="fv-modal-description"><code>{{ field.control_name }}</code> · {{ field.control_type }}</p>
+                                    <div class="fv-modal-body">
+                                        <div class="fv-settings-grid">
+                                            {% include '@platform_ui/components/settings_field.html.twig' with {
+                                                id: 'field-' ~ formIndex ~ '-' ~ fieldIndex ~ '-label',
+                                                name: 'fields[' ~ field.field_key ~ '][display_label]',
+                                                label: 'Display label',
+                                                value: field.display_label,
+                                                help: 'This label is used in the delivered email.',
+                                                error: null
+                                            } only %}
+                                            <div class="fv-field">
+                                                <label for="field-{{ formIndex }}-{{ fieldIndex }}-parameter">Map to parameter</label>
+                                                <select class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-parameter" name="fields[{{ field.field_key }}][parameter_key]" required>
+                                                    <option value="">Choose a parameter</option>
+                                                    {% for parameterKey, parameterLabel in builtInParameters %}
+                                                        <option value="{{ parameterKey }}"{% if selectedParameter == parameterKey %} selected{% endif %}>{{ parameterLabel }} ({{ parameterKey }})</option>
+                                                    {% endfor %}
+                                                    <option value="custom"{% if selectedParameter == 'custom' %} selected{% endif %}>Custom parameter</option>
+                                                </select>
+                                                <p class="fv-field-help">Choose a built-in parameter or use a custom key.</p>
+                                            </div>
+                                            <div class="fv-field">
+                                                <label for="field-{{ formIndex }}-{{ fieldIndex }}-custom">Custom parameter key</label>
+                                                <input class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-custom" name="fields[{{ field.field_key }}][custom_parameter_key]" value="{{ customParameter }}" maxlength="80" pattern="[a-z][a-z0-9_]{0,79}" placeholder="for_example_role">
+                                                <p class="fv-field-help">Use this only for Custom parameter.</p>
+                                            </div>
+                                            <div class="fv-field">
+                                                <input type="hidden" name="fields[{{ field.field_key }}][required]" value="0">
+                                                <label class="fv-checkbox-label" for="field-{{ formIndex }}-{{ fieldIndex }}-required"><input id="field-{{ formIndex }}-{{ fieldIndex }}-required" name="fields[{{ field.field_key }}][required]" type="checkbox" value="1"{% if field.required %} checked{% endif %}> Required field</label>
+                                                <p class="fv-field-help">Detected from the website HTML and adjustable before saving.</p>
+                                            </div>
+                                            <div class="fv-field">
+                                                <label for="field-{{ formIndex }}-{{ fieldIndex }}-length">Maximum length</label>
+                                                <input class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-length" name="fields[{{ field.field_key }}][max_length]" type="number" min="1" max="10000" value="{{ field.max_length }}" required>
                                             </div>
                                         </div>
-                                    {% endif %}
-                                </fieldset>
-                            {% endfor %}
-                        </section>
+                                        {% if field.choices is not empty %}
+                                            <div class="fv-field">
+                                                <h3>Allowed choices</h3>
+                                                <p class="fv-field-help">Choice values are locked to the detected HTML values. You may adjust the labels used in the email.</p>
+                                                <div class="fv-settings-grid">
+                                                    {% for choice in field.choices %}
+                                                        <div class="fv-field">
+                                                            <label for="field-{{ formIndex }}-{{ fieldIndex }}-choice-{{ loop.index }}">Choice label for <code>{{ choice.value }}</code></label>
+                                                            <input class="fv-input" id="field-{{ formIndex }}-{{ fieldIndex }}-choice-{{ loop.index }}" name="fields[{{ field.field_key }}][choice_labels][{{ loop.index0 }}]" value="{{ choice.label }}" maxlength="256" required>
+                                                        </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    <footer class="fv-modal-footer">
+                                        <button class="fv-button fv-button-secondary" type="button" data-modal-close>Done reviewing</button>
+                                    </footer>
+                                </div>
+                            </section>
+                        {% endfor %}
                         <div class="fv-action-bar">
                             <button class="fv-button fv-button-primary" type="submit"{% if form.ambiguous or form.unsupportedControls is not empty %} disabled{% endif %}>Apply this form to the draft</button>
                         </div>

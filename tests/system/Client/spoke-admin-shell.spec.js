@@ -22,3 +22,18 @@ test('the local shell applies themes and preserves sidebar interaction state', a
   await page.keyboard.press('Escape');
   await expect(page.locator('body')).not.toHaveClass(/fv-sidebar-open/);
 });
+
+test('field review buttons open and close discovery dialogs', async ({ page }) => {
+  await page.goto('/spoke-shell');
+
+  const dialog = page.getByRole('dialog', { name: 'Review field' });
+  await expect(dialog).not.toBeVisible();
+
+  await page.getByRole('button', { name: 'Review field' }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('#test-field-label')).toBeFocused();
+
+  await page.getByRole('button', { name: 'Done reviewing' }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Review field' })).toBeFocused();
+});

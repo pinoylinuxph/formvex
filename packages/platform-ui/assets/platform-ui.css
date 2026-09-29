@@ -889,6 +889,43 @@ h2 {
   border-top: 1px solid var(--fv-color-border-subtle);
 }
 
+.fv-discovery-dialog {
+  display: none;
+}
+
+.fv-discovery-dialog.is-open {
+  display: grid;
+}
+
+.fv-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--fv-space-2);
+  color: var(--fv-color-content-primary);
+  font-weight: var(--fv-weight-medium);
+}
+
+.fv-checkbox-label input {
+  width: auto;
+}
+
+html:not(.fv-js) .fv-discovery-dialog {
+  position: static;
+  display: block;
+  margin-top: var(--fv-space-4);
+  padding: var(--fv-space-4);
+  border: 1px solid var(--fv-color-card-border);
+  border-radius: var(--fv-radius-lg);
+  background: var(--fv-color-bg-canvas);
+}
+
+html:not(.fv-js) .fv-discovery-dialog .fv-modal-panel {
+  width: 100%;
+  max-height: none;
+  border: 0;
+  box-shadow: none;
+}
+
 .fv-drawer {
   top: var(--fv-layout-navbar-height);
   right: var(--fv-space-0);
