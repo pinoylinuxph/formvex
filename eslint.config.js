@@ -27,6 +27,7 @@ export default [
         HTMLElement: 'readonly',
         process: 'readonly',
         URL: 'readonly',
+        URLSearchParams: 'readonly',
         window: 'readonly',
       },
     },

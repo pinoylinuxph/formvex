@@ -143,6 +143,29 @@ final readonly class InstallationSettingsService
         return $this->snapshot($applicationRoot);
     }
 
+    /** @param array<string, string> $input */
+    public function saveDiscovery(string $applicationRoot, array $input): SettingsSnapshot
+    {
+        $paths = $this->paths($applicationRoot);
+        $current = $this->settingsStore->get($paths);
+        $kib = $this->integer($input, 'discovery_payload_limit_kib', 'discovery payload limit');
+
+        if ($kib < 128 || $kib > 1024) {
+            throw new InstallationSettingsFailure(
+                'discovery_payload_limit_invalid',
+                'The discovery payload limit must be between 128 KiB and 1,024 KiB.',
+                ['discovery_payload_limit_kib' => 'Enter a value from 128 to 1,024 KiB.'],
+            );
+        }
+
+        $settings = $current->withDiscoveryPayloadLimitBytes($kib * 1024);
+        $now = $this->clock->now();
+        $this->settingsStore->save($paths, $settings, $now);
+        $this->settingsStore->recordAudit($paths, 'spoke.settings.discovery_saved', 'success', $now);
+
+        return $this->snapshot($applicationRoot);
+    }
+
     public function sendSmtpTest(string $applicationRoot, string $recipient): SmtpTestState
     {
         $paths = $this->paths($applicationRoot);

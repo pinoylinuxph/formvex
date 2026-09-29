@@ -13,8 +13,8 @@
     {% include '@platform_ui/components/page_header.html.twig' with {
         pageTitle: pageTitle,
         pageDescription: pageDescription,
-        actionLabel: 'Create form configuration',
-        actionUrl: path('spoke_admin_form_new'),
+        primaryActionLabel: 'Create form configuration',
+        primaryActionHref: path('spoke_admin_form_new'),
     } only %}
 
     {% include '@platform_ui/components/feedback.html.twig' with {

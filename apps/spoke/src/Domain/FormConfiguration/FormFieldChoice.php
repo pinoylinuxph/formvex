@@ -12,12 +12,12 @@ final readonly class FormFieldChoice
         public string $value,
         public string $label,
     ) {
-        if ($this->value === '' || strlen($this->value) > 255) {
-            throw new FormConfigurationFailure('field_choice_invalid', 'Each approved choice needs a non-empty value of no more than 255 characters.');
+        if ($this->value === '' || mb_strlen($this->value, 'UTF-8') > 256) {
+            throw new FormConfigurationFailure('field_choice_invalid', 'Each approved choice needs a non-empty value of no more than 256 characters.');
         }
 
-        if ($this->label === '' || strlen($this->label) > 255) {
-            throw new FormConfigurationFailure('field_choice_invalid', 'Each approved choice needs a non-empty label of no more than 255 characters.');
+        if ($this->label === '' || mb_strlen($this->label, 'UTF-8') > 256) {
+            throw new FormConfigurationFailure('field_choice_invalid', 'Each approved choice needs a non-empty label of no more than 256 characters.');
         }
     }
 }

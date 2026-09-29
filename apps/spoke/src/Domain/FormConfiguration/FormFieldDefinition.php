@@ -32,16 +32,16 @@ final readonly class FormFieldDefinition
             throw new FormConfigurationFailure('field_type_invalid', 'The field control type is not supported by Formvex.');
         }
 
-        if ($this->displayLabel === '' || strlen($this->displayLabel) > 160) {
-            throw new FormConfigurationFailure('field_label_invalid', 'Each field needs a display label of no more than 160 characters.');
+        if ($this->displayLabel === '' || mb_strlen($this->displayLabel, 'UTF-8') > 256) {
+            throw new FormConfigurationFailure('field_label_invalid', 'Each field needs a display label of no more than 256 characters.');
         }
 
         if (preg_match('/^[a-z][a-z0-9_]{0,79}$/', $this->parameterKey) !== 1) {
             throw new FormConfigurationFailure('parameter_key_invalid', 'Each parameter key must start with a lowercase letter and use lowercase letters, numbers, and underscores.');
         }
 
-        if ($this->ordinal < 0 || $this->ordinal > 49) {
-            throw new FormConfigurationFailure('field_order_invalid', 'Field order must be between 0 and 49.');
+        if ($this->ordinal < 0 || $this->ordinal > 99) {
+            throw new FormConfigurationFailure('field_order_invalid', 'Field order must be between 0 and 99.');
         }
 
         if ($this->maxLength < 1 || $this->maxLength > 10000) {
@@ -58,8 +58,8 @@ final readonly class FormFieldDefinition
     /** @param list<FormFieldDefinition> $fields */
     public static function validateList(array $fields): void
     {
-        if (count($fields) > 50) {
-            throw new FormConfigurationFailure('field_count_exceeded', 'A form can contain no more than 50 configured fields.', ['fields_json' => 'Remove fields until 50 or fewer remain.']);
+        if (count($fields) > 100) {
+            throw new FormConfigurationFailure('field_count_exceeded', 'A form can contain no more than 100 configured fields.', ['fields_json' => 'Remove fields until 100 or fewer remain.']);
         }
 
         $fieldKeys = [];

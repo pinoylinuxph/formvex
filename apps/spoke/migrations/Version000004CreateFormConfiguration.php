@@ -75,7 +75,7 @@ final class Version000004CreateFormConfiguration implements Migration
             . 'control_type TEXT NOT NULL, '
             . 'display_label TEXT NOT NULL, '
             . 'parameter_key TEXT NOT NULL, '
-            . 'ordinal INTEGER NOT NULL CHECK (ordinal >= 0 AND ordinal < 50), '
+            . 'ordinal INTEGER NOT NULL CHECK (ordinal >= 0 AND ordinal < 100), '
             . 'is_required INTEGER NOT NULL CHECK (is_required IN (0, 1)), '
             . 'max_length INTEGER NOT NULL CHECK (max_length BETWEEN 1 AND 10000), '
             . 'FOREIGN KEY (version_id) REFERENCES form_configuration_versions(id) ON DELETE CASCADE, '

@@ -1,0 +1,151 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}Discover forms · Formvex{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    <nav class="fv-breadcrumbs" aria-label="Breadcrumbs">
+        <a href="{{ path('spoke_admin_home') }}">Overview</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ path('spoke_admin_forms') }}">Forms</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Discover</span>
+    </nav>
+
+    {% include '@platform_ui/components/page_header.html.twig' with {
+        pageTitle: 'Discover forms on a website page',
+        pageDescription: 'Formvex reads form structure and field metadata only. It never reads visitor-entered values during discovery.',
+    } only %}
+
+    {% include '@platform_ui/components/feedback.html.twig' with {
+        message: message,
+        title: messageVariant == 'success' ? 'Discovery saved' : 'Discovery notice',
+        variant: messageVariant,
+    } only %}
+
+    <p class="fv-page-note"><a href="{{ publicFormId ? path('spoke_admin_form_discovery_review', {publicFormId: publicFormId}) : path('spoke_admin_form_discovery_new_review') }}">Refresh discovery results</a></p>
+
+    {% if discoveryUrl %}
+        <section class="fv-panel" aria-labelledby="discovery-session-heading">
+            <div class="fv-section-heading">
+                <p class="fv-eyebrow">Browser step</p>
+                <h2 id="discovery-session-heading">Open the selected page</h2>
+                <p>This one-time discovery link expires at <time datetime="{{ expiresAt }}">{{ expiresAt|date('Y-m-d H:i:s T') }}</time>. Open it in a new tab where the Formvex client script is installed.</p>
+            </div>
+            <a class="fv-button fv-button-primary" href="{{ discoveryUrl }}" target="_blank" rel="noopener">Open page for discovery</a>
+            <p class="fv-page-note">The authorization is carried in the URL fragment. The installed script removes it after sending metadata, so it is not sent to the page server.</p>
+        </section>
+    {% endif %}
+
+    {% if candidate %}
+        <section class="fv-panel" aria-labelledby="candidate-heading">
+            <div class="fv-section-heading">
+                <p class="fv-eyebrow">Administrator review</p>
+                <h2 id="candidate-heading">Detected forms</h2>
+                <p>Review one form at a time. Applying a form creates or updates only the inactive draft; it does not publish or activate the form.</p>
+            </div>
+
+            {% for form in candidate.forms %}
+                <article class="fv-panel fv-discovery-card" aria-labelledby="discovered-form-{{ loop.index }}">
+                    <header class="fv-section-heading">
+                        <p class="fv-eyebrow">Form {{ loop.index }} of {{ candidate.forms|length }}</p>
+                        <h3 id="discovered-form-{{ loop.index }}">{{ form.displayName }}</h3>
+                        <p>Marker: <code>{{ form.formMarker }}</code></p>
+                    </header>
+
+                    {% if form.markerGenerated %}
+                        <div class="fv-alert fv-alert-warning" role="status">
+                            <strong>Website source change required.</strong>
+                            <span>Add <code>data-formvex="{{ form.formMarker }}"</code> to this form before publishing or activating the configuration. Formvex generated this marker because the page did not provide a unique form id.</span>
+                        </div>
+                    {% endif %}
+
+                    {% if form.ambiguous or form.unsupportedControls is not empty %}
+                        <div class="fv-alert fv-alert-danger" role="alert">
+                            <strong>This form cannot be applied yet.</strong>
+                            <span>Resolve each ambiguous or unsupported control in the website source, then run discovery again.</span>
+                        </div>
+                    {% endif %}
+
+                    {% if removedMappingsByForm[loop.index0]|default([]) is not empty %}
+                        <div class="fv-alert fv-alert-warning" role="status">
+                            <strong>Existing mappings need review.</strong>
+                            <span>The following controls were not found in this re-detection candidate and will be removed from the draft if you apply it: {{ removedMappingsByForm[loop.index0]|join(', ') }}.</span>
+                        </div>
+                    {% endif %}
+
+                    {% if form.unsupportedControls is not empty %}
+                        <div class="fv-field">
+                            <h4>Unsupported or unresolved controls</h4>
+                            <ul>
+                                {% for control in form.unsupportedControls %}
+                                    <li><code>{{ control.control_name|default('(no name)') }}</code> — {{ control.control_type }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
+
+                    <div class="fv-table-wrap">
+                        <table class="fv-table">
+                            <caption class="fv-visually-hidden">Detected controls for {{ form.displayName }}</caption>
+                            <thead>
+                            <tr>
+                                <th scope="col">Control</th>
+                                <th scope="col">Type</th>
+                                <th scope="col">Label</th>
+                                <th scope="col">Required</th>
+                                <th scope="col">Suggestions</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {% for control in form.controls %}
+                                <tr>
+                                    <th scope="row"><code>{{ control.controlName }}</code></th>
+                                    <td>{{ control.controlType }}</td>
+                                    <td>{{ control.displayLabel }}{% if not control.labelResolved %} <span class="fv-status-badge">Needs label review</span>{% endif %}</td>
+                                    <td>{{ control.required ? 'Yes' : 'No' }}</td>
+                                    <td>{% if control.suggestedParameters is empty %}<span class="fv-status-badge">Custom parameter required</span>{% else %}{{ control.suggestedParameters|join(', ') }}{% endif %}</td>
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <form class="fv-form" method="post" action="{{ publicFormId ? path('spoke_admin_form_discovery_apply', {publicFormId: publicFormId}) : path('spoke_admin_form_discovery_new_apply') }}">
+                        <input type="hidden" name="_token" value="{{ csrfToken }}">
+                        <input type="hidden" name="candidate_id" value="{{ candidate.candidateId }}">
+                        <input type="hidden" name="selected_form_index" value="{{ loop.index0 }}">
+                        {% if publicFormId %}<input type="hidden" name="revision" value="{{ draftRevision }}">{% endif %}
+                        <div class="fv-field">
+                            <label for="fields-json-{{ loop.index }}">Reviewed mapping JSON</label>
+                            <textarea class="fv-input" id="fields-json-{{ loop.index }}" name="fields_json" rows="16" spellcheck="false">{{ candidateFieldsByForm[loop.index0]|default('[]') }}</textarea>
+                            <p class="fv-field-help">Confirm every parameter_key. Replace <code>unmapped</code> with a built-in key or a unique custom snake_case key. Keep detected choice values unchanged; choice labels may be edited.</p>
+                        </div>
+                        <div class="fv-action-bar">
+                            <button class="fv-button fv-button-primary" type="submit"{% if form.ambiguous or form.unsupportedControls is not empty %} disabled{% endif %}>Apply this form to the draft</button>
+                        </div>
+                    </form>
+                </article>
+            {% endfor %}
+
+            <form method="post" action="{{ publicFormId ? path('spoke_admin_form_discovery_discard', {publicFormId: publicFormId}) : path('spoke_admin_form_discovery_new_discard') }}">
+                <input type="hidden" name="_token" value="{{ csrfToken }}">
+                <input type="hidden" name="candidate_id" value="{{ candidate.candidateId }}">
+                <input type="hidden" name="selected_form_index" value="0">
+                <input type="hidden" name="fields_json" value="[]">
+                <button class="fv-button fv-button-secondary" type="submit">Discard discovery candidate</button>
+            </form>
+        </section>
+    {% else %}
+        <section class="fv-panel" aria-labelledby="waiting-heading">
+            <div class="fv-section-heading">
+                <p class="fv-eyebrow">Waiting for browser metadata</p>
+                <h2 id="waiting-heading">No pending discovery result</h2>
+                <p>Open the selected page using the button above. When the installed client finishes, return here and refresh this page to review the candidate.</p>
+            </div>
+        </section>
+    {% endif %}
+
+    <p class="fv-page-note"><a href="{{ publicFormId ? path('spoke_admin_form_edit', {publicFormId: publicFormId}) : path('spoke_admin_form_new') }}">Return to form configuration</a></p>
+</div>
+{% endblock %}

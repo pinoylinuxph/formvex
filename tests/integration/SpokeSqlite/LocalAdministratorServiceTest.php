@@ -20,6 +20,7 @@ use Formvex\Spoke\Migrations\Version000001CreateInstallationMetadata;
 use Formvex\Spoke\Migrations\Version000002CreateLocalAdministratorAuth;
 use Formvex\Spoke\Migrations\Version000003CreateInstallationSettings;
 use Formvex\Spoke\Migrations\Version000004CreateFormConfiguration;
+use Formvex\Spoke\Migrations\Version000005CreateFormDiscovery;
 use PHPUnit\Framework\TestCase;
 
 final class LocalAdministratorServiceTest extends TestCase
@@ -45,6 +46,7 @@ final class LocalAdministratorServiceTest extends TestCase
                 new Version000002CreateLocalAdministratorAuth(),
                 new Version000003CreateInstallationSettings(),
                 new Version000004CreateFormConfiguration(),
+                new Version000005CreateFormDiscovery(),
                 $this->clock,
             ),
             $this->clock,

@@ -105,6 +105,16 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertStringContainsString('v1', $published->getContent());
     }
 
+    public function testFormsIndexShowsCreateFormAction(): void
+    {
+        [$session] = $this->authenticateAdministrator();
+        $forms = $this->request('GET', '/formvex/forms', [], ['formvex_session' => $session]);
+
+        self::assertSame(Response::HTTP_OK, $forms->getStatusCode());
+        self::assertStringContainsString('Create form configuration', (string) $forms->getContent());
+        self::assertStringContainsString('href="/formvex/forms/new"', (string) $forms->getContent());
+    }
+
     public function testPublicResolutionReturnsMinimalMetadataAndSafeNoMatch(): void
     {
         [$session, $csrf] = $this->authenticateAdministrator();
@@ -159,6 +169,84 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertSame('form_unavailable', $notFoundBody['error']['code']);
         self::assertNotSame('', $notFoundBody['error']['request_id']);
         self::assertStringNotContainsString('owner@logoslab.xyz', (string) $notFound->getContent());
+    }
+
+    public function testAdministratorCanDiscoverReviewAndApplyAFormCandidate(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $start = $this->request('POST', '/formvex/forms/new/discovery', [
+            '_token' => $csrf,
+            'page_host' => 'logoslab.xyz',
+            'page_path' => '/contact',
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+
+        self::assertSame(Response::HTTP_OK, $start->getStatusCode());
+        self::assertStringContainsString('Open page for discovery', (string) $start->getContent());
+        preg_match('~https://logoslab\.xyz/contact#formvex_discovery=([^"<]+)~', (string) $start->getContent(), $matches);
+        $capability = rawurldecode($matches[1] ?? '');
+        self::assertNotSame('', $capability);
+
+        $metadata = json_encode([
+            'schema_version' => 1,
+            'capability' => $capability,
+            'page_path' => '/contact',
+            'forms' => [[
+                'form_marker' => 'contact-form',
+                'display_name' => 'Contact form',
+                'marker_generated' => false,
+                'ambiguous' => false,
+                'controls' => [[
+                    'discovery_key' => 'control-1-1',
+                    'control_name' => 'email',
+                    'control_type' => 'email',
+                    'display_label' => 'Email',
+                    'label_resolved' => true,
+                    'required' => true,
+                    'max_length' => 255,
+                    'choices' => [],
+                    'choice_group_key' => null,
+                    'suggested_parameters' => ['email'],
+                ]],
+                'unsupported_controls' => [],
+            ]],
+        ], JSON_THROW_ON_ERROR);
+        $discoveryRequest = Request::create('/formvex/api/v1/discovery/redeem', 'POST', [], [], [], [
+            'HTTPS' => 'on',
+            'HTTP_HOST' => 'logoslab.xyz',
+            'HTTP_ORIGIN' => 'https://logoslab.xyz',
+            'CONTENT_TYPE' => 'application/json',
+        ], $metadata);
+        $discoveryResponse = self::$kernel->handle($discoveryRequest);
+        self::$kernel->terminate($discoveryRequest, $discoveryResponse);
+        self::assertSame(Response::HTTP_CREATED, $discoveryResponse->getStatusCode());
+        $candidateBody = json_decode((string) $discoveryResponse->getContent(), true, 4, JSON_THROW_ON_ERROR);
+        $candidateId = $candidateBody['candidate_id'] ?? '';
+        self::assertNotSame('', $candidateId);
+
+        $review = $this->request('GET', '/formvex/forms/new/discovery', [], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $review->getStatusCode());
+        self::assertStringContainsString('Detected forms', (string) $review->getContent());
+        self::assertStringContainsString('contact-form', (string) $review->getContent());
+
+        $fields = json_encode([[
+            'field_key' => 'control-1-1',
+            'control_name' => 'email',
+            'control_type' => 'email',
+            'display_label' => 'Email',
+            'parameter_key' => 'email',
+            'ordinal' => 0,
+            'required' => true,
+            'max_length' => 255,
+            'choices' => [],
+        ]], JSON_THROW_ON_ERROR);
+        $apply = $this->request('POST', '/formvex/forms/new/discovery/apply', [
+            '_token' => $csrf,
+            'candidate_id' => $candidateId,
+            'selected_form_index' => '0',
+            'fields_json' => $fields,
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_FOUND, $apply->getStatusCode());
+        self::assertMatchesRegularExpression('#/formvex/forms/[0-9a-f-]+$#', (string) $apply->headers->get('Location'));
     }
 
     /** @return array{0: string, 1: string} */

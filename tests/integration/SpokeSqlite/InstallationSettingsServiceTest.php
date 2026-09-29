@@ -51,6 +51,7 @@ final class InstallationSettingsServiceTest extends TestCase
                 new \Formvex\Spoke\Migrations\Version000002CreateLocalAdministratorAuth(),
                 new \Formvex\Spoke\Migrations\Version000003CreateInstallationSettings(),
                 new \Formvex\Spoke\Migrations\Version000004CreateFormConfiguration(),
+                new \Formvex\Spoke\Migrations\Version000005CreateFormDiscovery(),
                 $this->clock,
             ),
             $this->clock,
@@ -151,6 +152,22 @@ final class InstallationSettingsServiceTest extends TestCase
 
         self::assertSame('first-password', new LocalSmtpSecretStore()->read($this->paths, 'b'));
         self::assertFileDoesNotExist($this->paths->secrets . '/smtp-password-a.php');
+    }
+
+    public function testDiscoveryPayloadLimitUsesTheApprovedRangeAndPersistsInBytes(): void
+    {
+        $service = $this->service(new RecordingSmtpTestTransport());
+
+        $snapshot = $service->saveDiscovery($this->temporaryRoot, ['discovery_payload_limit_kib' => '512']);
+
+        self::assertSame(512 * 1024, $snapshot->settings->discoveryPayloadLimitBytes);
+
+        try {
+            $service->saveDiscovery($this->temporaryRoot, ['discovery_payload_limit_kib' => '1025']);
+            self::fail('A discovery limit above 1,024 KiB must be rejected.');
+        } catch (InstallationSettingsFailure $failure) {
+            self::assertSame('discovery_payload_limit_invalid', $failure->failureCode);
+        }
     }
 
     private function service(RecordingSmtpTestTransport $transport): InstallationSettingsService

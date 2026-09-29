@@ -50,6 +50,7 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 ),
                 $this->integerValue($row, 'smtp_configuration_revision'),
                 $this->stringValue($row, 'smtp_secret_slot'),
+                $this->integerValue($row, 'discovery_payload_limit_bytes'),
             );
         } catch (InstallationSettingsFailure $failure) {
             throw $failure;
@@ -73,6 +74,7 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 . 'smtp_timeout_seconds = :smtp_timeout_seconds, maximum_login_failures = :maximum_login_failures, '
                 . 'login_window_minutes = :login_window_minutes, login_cooldown_minutes = :login_cooldown_minutes, '
                 . 'smtp_configuration_revision = :smtp_configuration_revision, smtp_secret_slot = :smtp_secret_slot, '
+                . 'discovery_payload_limit_bytes = :discovery_payload_limit_bytes, '
                 . 'updated_at = :updated_at WHERE singleton_id = 1',
             );
             $statement->execute([
@@ -92,6 +94,7 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 'login_cooldown_minutes' => $settings->loginThrottle->cooldownMinutes,
                 'smtp_configuration_revision' => $settings->smtpConfigurationRevision,
                 'smtp_secret_slot' => $settings->smtpSecretSlot,
+                'discovery_payload_limit_bytes' => $settings->discoveryPayloadLimitBytes,
                 'updated_at' => $this->formatTimestamp($now),
             ]);
 

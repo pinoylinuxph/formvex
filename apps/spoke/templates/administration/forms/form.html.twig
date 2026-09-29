@@ -62,7 +62,7 @@
             <div class="fv-field">
                 <label for="fields-json">Field definitions JSON</label>
                 <textarea class="fv-input" id="fields-json" name="fields_json" rows="14" spellcheck="false">{{ fieldsJson }}</textarea>
-                <p class="fv-field-help">Each field requires field_key, control_name, control_type, display_label, parameter_key, and may set ordinal, required, max_length, and choices. Keep this document below 64 KiB.</p>
+                <p class="fv-field-help">Each field requires field_key, control_name, control_type, display_label, parameter_key, and may set ordinal, required, max_length, and choices. Keep this document below 256 KiB.</p>
                 {% if fieldErrors.fields_json|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.fields_json }}</p>{% endif %}
             </div>
         </section>
@@ -71,7 +71,30 @@
             <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_forms') }}">Cancel</a>
             <button class="fv-button fv-button-primary" type="submit">Save draft</button>
         </div>
-    </form>{% elseif details.trashed %}
+    </form>
+
+        <section class="fv-panel fv-settings-panel" aria-labelledby="discovery-start-heading">
+            <header class="fv-section-heading">
+                <p class="fv-eyebrow">Authorized browser discovery</p>
+                <h2 id="discovery-start-heading">Detect fields from the installed website script</h2>
+                <p>Formvex will inspect this page's form structure in the browser. It will not collect visitor-entered values, change the existing form design, or publish a configuration automatically.</p>
+            </header>
+            <form class="fv-form" method="post" action="{{ isNew ? path('spoke_admin_form_discovery_new_start') : path('spoke_admin_form_discovery_start', {publicFormId: details.draft.publicId}) }}">
+                <input type="hidden" name="_token" value="{{ csrfToken }}">
+                {% if isNew %}
+                    <div class="fv-settings-grid">
+                        {% include '@platform_ui/components/settings_field.html.twig' with {id: 'discovery-page-host', name: 'page_host', label: 'Website host', value: formData.page_host, help: 'Use the configured HTTPS bare or www alias.', error: null} only %}
+                        {% include '@platform_ui/components/settings_field.html.twig' with {id: 'discovery-page-path', name: 'page_path', label: 'Page path', value: formData.page_path|default('/'), help: 'Example: /contact. Query strings and fragments are ignored.', error: null} only %}
+                    </div>
+                {% else %}
+                    <input type="hidden" name="page_host" value="{{ formData.page_host }}">
+                    <input type="hidden" name="page_path" value="{{ formData.page_path }}">
+                    <p class="fv-page-note">Discovery target: <code>https://{{ formData.page_host }}{{ formData.page_path }}</code></p>
+                {% endif %}
+                <button class="fv-button fv-button-secondary" type="submit">Start discovery</button>
+            </form>
+        </section>
+    {% elseif details.trashed %}
         <div class="fv-alert fv-alert-warning" role="status"><strong>This form is in Trash.</strong><span>Restore it before changing its draft or publishing a version.</span></div>
     {% endif %}
 

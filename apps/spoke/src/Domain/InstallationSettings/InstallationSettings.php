@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Formvex\Spoke\Domain\InstallationSettings;
 
+use Formvex\Spoke\Domain\InstallationSettings\Exception\InstallationSettingsFailure;
+
 final readonly class InstallationSettings
 {
     public function __construct(
@@ -21,7 +23,11 @@ final readonly class InstallationSettings
         public LoginThrottleSettings $loginThrottle,
         public int $smtpConfigurationRevision,
         public string $smtpSecretSlot,
+        public int $discoveryPayloadLimitBytes = 131072,
     ) {
+        if ($this->discoveryPayloadLimitBytes < 131072 || $this->discoveryPayloadLimitBytes > 1048576) {
+            throw new InstallationSettingsFailure('discovery_payload_limit_invalid', 'The discovery payload limit must be between 128 KiB and 1,024 KiB.');
+        }
     }
 
     public static function defaults(): self
@@ -65,6 +71,7 @@ final readonly class InstallationSettings
             $this->loginThrottle,
             $this->smtpConfigurationRevision,
             $this->smtpSecretSlot,
+            $this->discoveryPayloadLimitBytes,
         );
     }
 
@@ -93,6 +100,7 @@ final readonly class InstallationSettings
             $this->loginThrottle,
             $this->smtpConfigurationRevision + 1,
             $smtpSecretSlot,
+            $this->discoveryPayloadLimitBytes,
         );
     }
 
@@ -113,6 +121,28 @@ final readonly class InstallationSettings
             $loginThrottle,
             $this->smtpConfigurationRevision,
             $this->smtpSecretSlot,
+            $this->discoveryPayloadLimitBytes,
+        );
+    }
+
+    public function withDiscoveryPayloadLimitBytes(int $bytes): self
+    {
+        return new self(
+            $this->websiteDisplayName,
+            $this->bareDomain,
+            $this->wwwAlias,
+            $this->operationalAlertEmail,
+            $this->senderEmail,
+            $this->senderName,
+            $this->smtpHost,
+            $this->smtpPort,
+            $this->smtpEncryption,
+            $this->smtpUsername,
+            $this->smtpTimeoutSeconds,
+            $this->loginThrottle,
+            $this->smtpConfigurationRevision,
+            $this->smtpSecretSlot,
+            $bytes,
         );
     }
 }

@@ -85,6 +85,12 @@ final class SettingsController extends AbstractController
         ]);
     }
 
+    #[Route('/formvex/settings/discovery', name: 'spoke_admin_settings_discovery_update', methods: ['POST'])]
+    public function saveDiscovery(Request $request): Response
+    {
+        return $this->save($request, 'discovery', ['discovery_payload_limit_kib']);
+    }
+
     #[Route('/formvex/settings/smtp-test', name: 'spoke_admin_settings_smtp_test', methods: ['POST'])]
     public function smtpTest(Request $request): Response
     {
@@ -141,6 +147,7 @@ final class SettingsController extends AbstractController
                 'identity' => $this->settingsService->saveIdentity($this->runtimeConfiguration->applicationRoot, $payload),
                 'smtp' => $this->settingsService->saveSmtp($this->runtimeConfiguration->applicationRoot, $payload),
                 'security' => $this->settingsService->saveSecurity($this->runtimeConfiguration->applicationRoot, $payload),
+                'discovery' => $this->settingsService->saveDiscovery($this->runtimeConfiguration->applicationRoot, $payload),
                 default => throw new InstallationSettingsFailure('settings_group_invalid', 'Formvex could not identify the settings group being saved.'),
             };
 
@@ -224,6 +231,7 @@ final class SettingsController extends AbstractController
             'maximum_failures' => (string) $settings->loginThrottle->maximumFailures,
             'window_minutes' => (string) $settings->loginThrottle->windowMinutes,
             'cooldown_minutes' => (string) $settings->loginThrottle->cooldownMinutes,
+            'discovery_payload_limit_kib' => (string) intdiv($settings->discoveryPayloadLimitBytes, 1024),
             'test_recipient' => '',
         ];
     }

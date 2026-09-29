@@ -208,6 +208,34 @@
         </form>
     </section>
 
+    <section class="fv-panel fv-settings-panel" aria-labelledby="discovery-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Form discovery</p>
+            <h2 id="discovery-heading">Discovery request limit</h2>
+            <p>This limits the total metadata returned for one page, including all detected forms, controls, labels, and choices. It never permits more than 1,024 KiB.</p>
+        </header>
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_discovery_update') }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'discovery-payload-limit-kib',
+                    name: 'discovery_payload_limit_kib',
+                    label: 'Discovery request limit (KiB)',
+                    type: 'number',
+                    value: formData.discovery_payload_limit_kib,
+                    min: 128,
+                    max: 1024,
+                    help: 'Default: 128 KiB. Allowed range: 128–1,024 KiB.',
+                    error: fieldErrors.discovery_payload_limit_kib|default(null),
+                } only %}
+            </div>
+            {% include '@platform_ui/components/form_action_bar.html.twig' with {
+                helpText: 'The limit is enforced by the server before discovery data is stored.',
+                submitLabel: 'Save discovery settings',
+            } only %}
+        </form>
+    </section>
+
     <section class="fv-panel fv-settings-panel" aria-labelledby="smtp-test-heading">
         <header class="fv-section-heading">
             <p class="fv-eyebrow">Explicit action</p>

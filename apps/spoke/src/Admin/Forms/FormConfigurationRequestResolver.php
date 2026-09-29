@@ -40,7 +40,7 @@ final class FormConfigurationRequestResolver
             $revision = (int) $revisionValue;
         }
 
-        $fields = $this->fields($this->stringValue($payload, 'fields_json'));
+        $fields = $this->fieldDefinitions($this->stringValue($payload, 'fields_json'));
 
         return new FormDraftRequest(
             new FormConfigurationDraftData(
@@ -119,7 +119,7 @@ final class FormConfigurationRequestResolver
     }
 
     /** @return list<FormFieldDefinition> */
-    private function fields(string $json): array
+    public function fieldDefinitions(string $json): array
     {
         $json = trim($json);
 
@@ -127,8 +127,8 @@ final class FormConfigurationRequestResolver
             return [];
         }
 
-        if (strlen($json) > 65536) {
-            throw new FormConfigurationFailure('fields_too_large', 'The field definition document is larger than 64 KiB. Remove unused definitions and try again.', ['fields_json' => 'Keep field definitions below 64 KiB.']);
+        if (strlen($json) > 262144) {
+            throw new FormConfigurationFailure('fields_too_large', 'The field definition document is larger than 256 KiB. Remove unused definitions and try again.', ['fields_json' => 'Keep field definitions below 256 KiB.']);
         }
 
         try {
