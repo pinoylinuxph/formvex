@@ -21,13 +21,55 @@
         variant: messageVariant,
     } only %}
 
+    <section class="fv-panel fv-settings-summary" aria-labelledby="settings-status-heading">
+        <div class="fv-settings-summary-heading">
+            <div>
+                <p class="fv-eyebrow">Configuration status</p>
+                <h2 id="settings-status-heading">Local installation readiness</h2>
+            </div>
+            <p>Review the current delivery and protection state before changing a setting.</p>
+        </div>
+        <div class="fv-settings-status-grid">
+            <div class="fv-settings-status-item">
+                <span class="fv-settings-status-label">SMTP delivery</span>
+                {% if settings.smtpReady and settings.testState.status.value == 'passed' and settings.testState.testedRevision == settings.settings.smtpConfigurationRevision %}
+                    <strong class="fv-settings-status fv-settings-status-success">Ready and tested</strong>
+                {% elseif settings.smtpReady %}
+                    <strong class="fv-settings-status fv-settings-status-warning">Test required</strong>
+                {% else %}
+                    <strong class="fv-settings-status fv-settings-status-muted">Not configured</strong>
+                {% endif %}
+            </div>
+            <div class="fv-settings-status-item">
+                <span class="fv-settings-status-label">CAPTCHA protection</span>
+                {% if abuseSettings.outageState.open %}
+                    <strong class="fv-settings-status fv-settings-status-danger">Provider unavailable</strong>
+                {% elseif abuseSettings.turnstileSecretConfigured %}
+                    <strong class="fv-settings-status fv-settings-status-success">Available when enabled</strong>
+                {% else %}
+                    <strong class="fv-settings-status fv-settings-status-muted">Optional and not configured</strong>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <nav class="fv-settings-tabs" aria-label="Settings sections">
+        {% for tab in settingsTabs %}
+            <a class="fv-settings-tab{% if activeTab == tab.id %} fv-settings-tab-active{% endif %}" href="{{ path('spoke_admin_settings', {tab: tab.id}) }}"{% if activeTab == tab.id %} aria-current="page"{% endif %}>
+                <span>{{ tab.label }}</span>
+                <small>{{ tab.description }}</small>
+            </a>
+        {% endfor %}
+    </nav>
+
+    {% if activeTab == 'website' %}
     <section class="fv-panel fv-settings-panel" aria-labelledby="identity-heading">
         <header class="fv-section-heading">
             <p class="fv-eyebrow">Website identity</p>
             <h2 id="identity-heading">Identify this website</h2>
             <p>These values identify the website connected to this local Formvex installation.</p>
         </header>
-        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_identity_update') }}">
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_identity_update', {tab: 'website'}) }}">
             <input type="hidden" name="_token" value="{{ csrfToken }}">
             <div class="fv-settings-grid">
                 {% include '@platform_ui/components/settings_field.html.twig' with {
@@ -72,14 +114,16 @@
             } only %}
         </form>
     </section>
+    {% endif %}
 
+    {% if activeTab == 'email' %}
     <section class="fv-panel fv-settings-panel" aria-labelledby="smtp-heading">
         <header class="fv-section-heading">
             <p class="fv-eyebrow">SMTP delivery</p>
             <h2 id="smtp-heading">Configure outgoing email</h2>
             <p>SMTP credentials stay in private local storage. Formvex never displays the saved password.</p>
         </header>
-        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_smtp_update') }}">
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_smtp_update', {tab: 'email'}) }}">
             <input type="hidden" name="_token" value="{{ csrfToken }}">
             <div class="fv-settings-grid">
                 {% include '@platform_ui/components/settings_field.html.twig' with {
@@ -160,14 +204,16 @@
             } only %}
         </form>
     </section>
+    {% endif %}
 
+    {% if activeTab == 'access' %}
     <section class="fv-panel fv-settings-panel" aria-labelledby="security-heading">
         <header class="fv-section-heading">
             <p class="fv-eyebrow">Administrator security</p>
             <h2 id="security-heading">Login-throttle controls</h2>
             <p>These settings limit repeated failed administrator login attempts without permanently locking the account.</p>
         </header>
-        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_security_update') }}">
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_security_update', {tab: 'access'}) }}">
             <input type="hidden" name="_token" value="{{ csrfToken }}">
             <div class="fv-settings-grid">
                 {% include '@platform_ui/components/settings_field.html.twig' with {
@@ -207,14 +253,16 @@
             } only %}
         </form>
     </section>
+    {% endif %}
 
+    {% if activeTab == 'protection' %}
     <section class="fv-panel fv-settings-panel" aria-labelledby="discovery-heading">
         <header class="fv-section-heading">
             <p class="fv-eyebrow">Form discovery</p>
             <h2 id="discovery-heading">Discovery request limit</h2>
             <p>This limits the total metadata returned for one page, including all detected forms, controls, labels, and choices. It never permits more than 1,024 KiB.</p>
         </header>
-        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_discovery_update') }}">
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_discovery_update', {tab: 'protection'}) }}">
             <input type="hidden" name="_token" value="{{ csrfToken }}">
             <div class="fv-settings-grid">
                 {% include '@platform_ui/components/settings_field.html.twig' with {
@@ -245,7 +293,7 @@
         {% if abuseSettings.outageState.open %}
             <div class="fv-alert fv-alert-danger" role="alert"><strong>CAPTCHA provider unavailable.</strong><span>Enabled CAPTCHA forms remain blocked until verification succeeds. Last reason: {{ abuseSettings.outageState.lastFailureCode|default('provider unavailable') }}.</span></div>
         {% endif %}
-        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_abuse_update') }}">
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_abuse_update', {tab: 'protection'}) }}">
             <input type="hidden" name="_token" value="{{ csrfToken }}">
             <div class="fv-settings-grid">
                 {% include '@platform_ui/components/settings_field.html.twig' with {id: 'abuse-per-form-short', name: 'per_form_short_limit', label: 'New attempts per form / 10 minutes', type: 'number', value: formData.per_form_short_limit, min: 1, max: 1000, help: 'Default: 5. Invalid and suspected-spam new attempts count; matching accepted retries do not.', error: fieldErrors.per_form_short_limit|default(null)} only %}
@@ -264,17 +312,19 @@
             {% include '@platform_ui/components/form_action_bar.html.twig' with {helpText: 'Defaults: 5 / 20 / 30 attempts and 60 / 300 request flood limits.', submitLabel: 'Save abuse controls'} only %}
         </form>
         <div class="fv-action-bar">
-            <form method="post" action="{{ path('spoke_admin_settings_abuse_reset') }}">
+            <form method="post" action="{{ path('spoke_admin_settings_abuse_reset', {tab: 'protection'}) }}">
                 <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="confirm_action" value="1">
                 <button class="fv-button fv-button-secondary" type="submit">Restore abuse defaults</button>
             </form>
-            <form method="post" action="{{ path('spoke_admin_settings_abuse_clear_counters') }}">
+            <form method="post" action="{{ path('spoke_admin_settings_abuse_clear_counters', {tab: 'protection'}) }}">
                 <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="confirm_action" value="1">
                 <button class="fv-button fv-button-secondary" type="submit">Clear active counters</button>
             </form>
         </div>
     </section>
+    {% endif %}
 
+    {% if activeTab == 'email' %}
     <section class="fv-panel fv-settings-panel" aria-labelledby="smtp-test-heading">
         <header class="fv-section-heading">
             <p class="fv-eyebrow">Explicit action</p>
@@ -292,7 +342,7 @@
         {% else %}
             <div class="fv-alert" role="status"><strong>SMTP is not ready.</strong><span>Save a valid SMTP host, sender address, username, and password before sending a test.</span></div>
         {% endif %}
-        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_smtp_test') }}">
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_smtp_test', {tab: 'email'}) }}">
             <input type="hidden" name="_token" value="{{ csrfToken }}">
             <div class="fv-settings-test-row">
                 <div class="fv-field">
@@ -307,5 +357,6 @@
             </div>
         </form>
     </section>
+    {% endif %}
 </div>
 {% endblock %}

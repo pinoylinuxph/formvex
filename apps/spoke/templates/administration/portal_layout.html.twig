@@ -68,7 +68,7 @@
             {% for item in navItems %}
                 <li>
                     <a class="fv-nav-link{{ item.route == currentRoute ? ' is-active' : '' }}" href="{{ path(item.route) }}" title="{{ item.label }}"{% if item.route == currentRoute %} aria-current="page"{% endif %}>
-                        <span class="fv-nav-mark" aria-hidden="true">{{ item.mark }}</span>
+                        {% include '@platform_ui/components/navigation_icon.html.twig' with {name: item.icon} only %}
                         <span class="fv-nav-label">{{ item.label }}</span>
                     </a>
                 </li>

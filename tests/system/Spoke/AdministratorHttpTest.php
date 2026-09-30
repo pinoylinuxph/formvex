@@ -150,6 +150,8 @@ final class AdministratorHttpTest extends KernelTestCase
             self::assertStringContainsString('Primary navigation', $response->getContent(), $destination);
             self::assertStringContainsString('Local Spoke', $response->getContent(), $destination);
             self::assertStringContainsString('data-theme="light"', $response->getContent(), $destination);
+            self::assertStringContainsString('class="fv-nav-icon"', $response->getContent(), $destination);
+            self::assertStringNotContainsString('fv-nav-mark', $response->getContent(), $destination);
         }
 
         $darkPreference = $this->request(
@@ -240,14 +242,26 @@ final class AdministratorHttpTest extends KernelTestCase
         ]);
 
         self::assertSame(Response::HTTP_OK, $settings->getStatusCode());
-        self::assertStringContainsString('Configure outgoing email', $settings->getContent());
-        self::assertStringContainsString('SMTPS (implicit TLS)', $settings->getContent());
-        self::assertStringContainsString('value="465"', $settings->getContent());
-        self::assertStringContainsString('value="10"', $settings->getContent());
+        self::assertStringContainsString('Local installation readiness', $settings->getContent());
+        self::assertStringContainsString('Submission protection', $settings->getContent());
+        self::assertStringContainsString('aria-current="page"', $settings->getContent());
+        self::assertStringNotContainsString('Configure outgoing email', $settings->getContent());
+
+        $emailSettings = $this->request('GET', '/formvex/settings?tab=email', [], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+
+        self::assertSame(Response::HTTP_OK, $emailSettings->getStatusCode());
+        self::assertStringContainsString('Configure outgoing email', $emailSettings->getContent());
+        self::assertStringContainsString('SMTPS (implicit TLS)', $emailSettings->getContent());
+        self::assertStringContainsString('value="465"', $emailSettings->getContent());
+        self::assertStringContainsString('value="10"', $emailSettings->getContent());
+        self::assertStringNotContainsString('Identify this website', $emailSettings->getContent());
 
         $saved = $this->request(
             'POST',
-            '/formvex/settings/identity',
+            '/formvex/settings/identity?tab=website',
             [
                 '_token' => $csrf,
                 'website_display_name' => 'Logoslab Production',

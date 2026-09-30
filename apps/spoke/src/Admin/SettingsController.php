@@ -27,6 +27,9 @@ final class SettingsController extends AbstractController
 
     private const CSRF_COOKIE = 'formvex_admin_csrf';
 
+    /** @var list<string> */
+    private const SETTINGS_TABS = ['website', 'email', 'access', 'protection'];
+
     public function __construct(
         private readonly LocalAdministratorService $administratorService,
         private readonly SettingsRequestResolver $settingsRequestResolver,
@@ -49,7 +52,7 @@ final class SettingsController extends AbstractController
             return $this->redirectToRoute('spoke_admin_password_change');
         }
 
-        return $this->renderSettings($request, $this->sessionId($request) ?? '', $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot));
+        return $this->renderSettings($request, $this->sessionId($request) ?? '', $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot), activeTab: $this->settingsTab($request->query->get('tab'), 'website'));
     }
 
     #[Route('/formvex/settings/identity', name: 'spoke_admin_settings_identity_update', methods: ['POST'])]
@@ -106,6 +109,7 @@ final class SettingsController extends AbstractController
         $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
         $abuseSnapshot = $this->abuseSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
         $formData = $this->formData($snapshot);
+        $activeTab = $this->settingsTab($request->query->get('tab'), 'protection');
 
         try {
             $payload = $this->settingsRequestResolver->payload($request, ['_token', 'per_form_short_limit', 'per_form_hour_limit', 'installation_hour_limit', 'flood_minute_limit', 'flood_hour_limit', 'trusted_proxy_cidrs', 'turnstile_secret']);
@@ -119,11 +123,11 @@ final class SettingsController extends AbstractController
                 $abuseSnapshot = $this->abuseSettingsService->saveTurnstileSecret($this->runtimeConfiguration->applicationRoot, $secret);
             }
 
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, array_merge($formData, ['turnstile_secret' => '']), 'Abuse-control settings were saved. Existing counters remain active until their configured windows expire.', 'success', '', [], $abuseSnapshot);
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, array_merge($formData, ['turnstile_secret' => '']), 'Abuse-control settings were saved. Existing counters remain active until their configured windows expire.', 'success', '', [], $abuseSnapshot, $activeTab);
         } catch (AdministratorFailure $failure) {
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger', '', [], $abuseSnapshot);
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger', '', [], $abuseSnapshot, $activeTab);
         } catch (InstallationSettingsFailure $failure) {
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', '', $failure->fieldErrors, $abuseSnapshot);
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', '', $failure->fieldErrors, $abuseSnapshot, $activeTab);
         }
     }
 
@@ -154,6 +158,7 @@ final class SettingsController extends AbstractController
 
         $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
         $formData = $this->formData($snapshot);
+        $activeTab = $this->settingsTab($request->query->get('tab'), 'email');
 
         try {
             $payload = $this->settingsRequestResolver->payload($request, ['_token', 'test_recipient']);
@@ -162,11 +167,11 @@ final class SettingsController extends AbstractController
             $state = $this->settingsService->sendSmtpTest($this->runtimeConfiguration->applicationRoot, $recipient);
             $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
 
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $state->summary, $state->status === SmtpTestStatus::PASSED ? 'success' : 'danger', $recipient);
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $state->summary, $state->status === SmtpTestStatus::PASSED ? 'success' : 'danger', $recipient, [], null, $activeTab);
         } catch (AdministratorFailure $failure) {
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger', $formData['test_recipient']);
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger', $formData['test_recipient'], [], null, $activeTab);
         } catch (InstallationSettingsFailure $failure) {
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', $formData['test_recipient'], $failure->fieldErrors);
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', $formData['test_recipient'], $failure->fieldErrors, null, $activeTab);
         }
     }
 
@@ -185,6 +190,7 @@ final class SettingsController extends AbstractController
 
         $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
         $formData = $this->formData($snapshot);
+        $activeTab = $this->settingsTab($request->query->get('tab'), $this->settingsTabForGroup($group));
 
         try {
             $payload = $this->settingsRequestResolver->payload($request, array_merge(['_token'], $allowedKeys));
@@ -199,11 +205,11 @@ final class SettingsController extends AbstractController
                 default => throw new InstallationSettingsFailure('settings_group_invalid', 'Formvex could not identify the settings group being saved.'),
             };
 
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $this->formData($snapshot), 'The ' . $group . ' settings were saved successfully.', 'success');
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $this->formData($snapshot), 'The ' . $group . ' settings were saved successfully.', 'success', '', [], null, $activeTab);
         } catch (AdministratorFailure $failure) {
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger');
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger', '', [], null, $activeTab);
         } catch (InstallationSettingsFailure $failure) {
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', $formData['test_recipient'], $failure->fieldErrors);
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', $formData['test_recipient'], $failure->fieldErrors, null, $activeTab);
         }
     }
 
@@ -230,9 +236,11 @@ final class SettingsController extends AbstractController
         string $testRecipient = '',
         array $fieldErrors = [],
         ?AbuseSettingsSnapshot $abuseSnapshot = null,
+        ?string $activeTab = null,
     ): Response {
         $sessionId = $this->sessionId($request) ?? $sessionIdHash;
         $csrfToken = $this->csrfToken($request, $sessionId);
+        $activeTab = $this->settingsTab($activeTab ?? $request->query->get('tab'), 'website');
         $abuseSnapshot ??= $this->abuseSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
         $formData = array_merge($this->formData($snapshot), [
             'per_form_short_limit' => (string) $abuseSnapshot->settings->perFormShortLimit,
@@ -252,7 +260,14 @@ final class SettingsController extends AbstractController
             'administratorName' => 'admin',
             'navItems' => array_values(PortalNavigation::destinations()),
             'pageTitle' => 'Settings',
-            'pageDescription' => 'Configure the local website identity, SMTP delivery, and administrator security.',
+            'pageDescription' => 'Configure this local Formvex installation by operational purpose.',
+            'activeTab' => $activeTab,
+            'settingsTabs' => [
+                ['id' => 'website', 'label' => 'Website', 'description' => 'Identity and domain'],
+                ['id' => 'email', 'label' => 'Email delivery', 'description' => 'SMTP and test email'],
+                ['id' => 'access', 'label' => 'Administrator access', 'description' => 'Login protection'],
+                ['id' => 'protection', 'label' => 'Submission protection', 'description' => 'Discovery, limits, and CAPTCHA'],
+            ],
             'settings' => $snapshot,
             'formData' => $formData,
             'testRecipient' => $testRecipient,
@@ -302,6 +317,22 @@ final class SettingsController extends AbstractController
         ];
     }
 
+    private function settingsTab(mixed $candidate, string $fallback): string
+    {
+        return is_string($candidate) && in_array($candidate, self::SETTINGS_TABS, true) ? $candidate : $fallback;
+    }
+
+    private function settingsTabForGroup(string $group): string
+    {
+        return match ($group) {
+            'identity' => 'website',
+            'smtp' => 'email',
+            'security' => 'access',
+            'discovery' => 'protection',
+            default => 'website',
+        };
+    }
+
     private function abuseAction(Request $request, string $action): Response
     {
         $context = $this->authenticatedContext($request);
@@ -311,6 +342,7 @@ final class SettingsController extends AbstractController
         }
 
         $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+        $activeTab = $this->settingsTab($request->query->get('tab'), 'protection');
 
         try {
             $payload = $this->settingsRequestResolver->payload($request, ['_token', 'confirm_action']);
@@ -325,11 +357,11 @@ final class SettingsController extends AbstractController
                 : $this->abuseSettingsService->clearCounters($this->runtimeConfiguration->applicationRoot);
             $message = $action === 'reset' ? 'Abuse-control settings were restored to their defaults. Active counters were not cleared.' : 'Active abuse counters were cleared. The configured limits remain unchanged.';
 
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $message, 'success', '', [], $abuseSnapshot);
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $message, 'success', '', [], $abuseSnapshot, $activeTab);
         } catch (AdministratorFailure $failure) {
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $this->administratorMessage($failure), 'danger');
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $this->administratorMessage($failure), 'danger', '', [], null, $activeTab);
         } catch (InstallationSettingsFailure $failure) {
-            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $failure->getMessage(), 'danger');
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $failure->getMessage(), 'danger', '', [], null, $activeTab);
         }
     }
 
