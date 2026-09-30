@@ -246,3 +246,123 @@ test('preserves the Logoslab form markup and existing submit control when attach
 
   expect(after).toEqual(before);
 });
+
+test('blocks an existing submit handler while the integration is still loading', async ({
+  page,
+}) => {
+  await page.goto('/integration');
+  await page.locator('#contact-form').evaluate((form) => {
+    form.addEventListener('submit', () => {
+      window.legacySubmitted = true;
+    });
+  });
+
+  await page.route('**/formvex/api/v1/forms/resolve*', async (route) => {
+    await page.waitForTimeout(250);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...resolution, form_marker: 'contact-form' }),
+    });
+  });
+  let submissionCount = 0;
+  await page.route('**/formvex/api/v1/forms/public-contact/submissions', async (route) => {
+    submissionCount += 1;
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: 1,
+        receipt_id: 'loading-guard-receipt',
+        acknowledgement: 'Received.',
+      }),
+    });
+  });
+
+  await page.addScriptTag({ type: 'module', url: '/build/client.js' });
+  await page.locator('#contact-form input[name="name"]').fill('Ada Lovelace');
+  await page.locator('#contact-form input[name="email"]').fill('ada@example.test');
+  await page.locator('#contact-form button').click();
+
+  expect(await page.evaluate(() => window.legacySubmitted === true)).toBe(false);
+  await expect(page.locator('#contact-form [data-formvex-pending-feedback]')).toHaveText(
+    'The form is still connecting. Wait a moment and try again.',
+  );
+
+  await expect.poll(() => submissionCount).toBe(0);
+  await expect(page.locator('#contact-form [data-formvex-pending-feedback]')).toHaveCount(0);
+  await page.locator('#contact-form button').click();
+  await expect(page.locator('#contact-form [data-formvex-feedback]')).toHaveText('Received.');
+  expect(submissionCount).toBe(1);
+});
+
+test('blocks a legacy handler during qualification redemption', async ({ page }) => {
+  await page.goto('/integration#formvex_qualification=one-time-capability');
+  await page.locator('#contact-form').evaluate((form) => {
+    form.addEventListener('submit', () => {
+      window.legacySubmitted = true;
+    });
+  });
+
+  let redemptionStarted = false;
+  let qualificationRequestBody;
+  let releaseRedemption;
+  const redemptionBlocked = new Promise((resolve) => {
+    releaseRedemption = resolve;
+  });
+  await page.route('**/formvex/api/v1/qualification/redeem', async (route) => {
+    redemptionStarted = true;
+    qualificationRequestBody = JSON.parse(route.request().postData() ?? '{}');
+    await redemptionBlocked;
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: 1,
+        qualification_token: 'qualification-session-token',
+        public_form_id: 'public-contact',
+        configuration_version: 3,
+        form_marker: 'contact-form',
+        captcha: { enabled: false, provider: 'turnstile', site_key: '' },
+      }),
+    });
+  });
+  let qualificationSubmissionCount = 0;
+  await page.route('**/formvex/api/v1/qualification/submissions', async (route) => {
+    qualificationSubmissionCount += 1;
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: 1,
+        receipt_id: 'qualification-loading-guard-receipt',
+        acknowledgement: 'Received.',
+      }),
+    });
+  });
+
+  await page.addScriptTag({ type: 'module', url: '/build/client.js' });
+  await expect.poll(() => redemptionStarted).toBe(true);
+  expect(qualificationRequestBody).toMatchObject({
+    schema_version: 1,
+    page_path: '/integration',
+  });
+  expect(qualificationRequestBody.forms[0]).toMatchObject({ form_marker: 'contact-form' });
+  expect(qualificationRequestBody.forms.every((form) => !Object.hasOwn(form, 'form'))).toBe(true);
+  await page.locator('#contact-form input[name="name"]').fill('Ada Lovelace');
+  await page.locator('#contact-form input[name="email"]').fill('ada@example.test');
+  await page.locator('#contact-form button').click();
+
+  expect(await page.evaluate(() => window.legacySubmitted === true)).toBe(false);
+  await expect(page.locator('#contact-form [data-formvex-pending-feedback]')).toHaveText(
+    'Qualification is still loading. Wait until the page says it is ready, then try again.',
+  );
+  releaseRedemption();
+  await expect(page.locator('[data-formvex-qualification-result]')).toHaveText(
+    'Qualification is ready. Enter synthetic test values and submit the existing form button or keyboard path.',
+  );
+
+  await page.locator('#contact-form button').click();
+  await expect(page.locator('#contact-form [data-formvex-feedback]')).toHaveText('Received.');
+  expect(qualificationSubmissionCount).toBe(1);
+});

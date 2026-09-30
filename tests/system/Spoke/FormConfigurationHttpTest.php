@@ -163,6 +163,14 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertArrayNotHasKey('subject', $body);
         self::assertSame('https://logoslab.xyz', $resolved->headers->get('Access-Control-Allow-Origin'));
 
+        $sameOriginResolved = $this->request('GET', '/formvex/api/v1/forms/resolve', [
+            'schema_version' => '1',
+            'page_path' => '/contact?source=home',
+            'form_marker' => 'contact-form',
+        ], [], ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => '']);
+        self::assertSame(Response::HTTP_OK, $sameOriginResolved->getStatusCode());
+        self::assertNull($sameOriginResolved->headers->get('Access-Control-Allow-Origin'));
+
         $notFound = $this->request('GET', '/formvex/api/v1/forms/resolve', [
             'schema_version' => '1',
             'page_path' => '/unknown',

@@ -40,6 +40,38 @@ export function findFormCandidates(documentRef) {
   });
 }
 
+export function installPendingSubmitGuard(
+  form,
+  documentRef,
+  message = 'The form is still connecting. Wait a moment and try again.',
+) {
+  let pendingFeedback = null;
+
+  const guard = (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    if (pendingFeedback === null) {
+      pendingFeedback = documentRef.createElement('div');
+      pendingFeedback.className = 'formvex-feedback';
+      pendingFeedback.setAttribute('data-formvex-pending-feedback', 'true');
+      pendingFeedback.setAttribute('role', 'status');
+      pendingFeedback.setAttribute('aria-live', 'polite');
+      form.append(pendingFeedback);
+    }
+
+    pendingFeedback.textContent = message;
+    pendingFeedback.hidden = false;
+  };
+
+  form.addEventListener('submit', guard, true);
+
+  return () => {
+    form.removeEventListener('submit', guard, true);
+    pendingFeedback?.remove();
+  };
+}
+
 export async function initializeFormIntegration({
   documentRef = globalThis.document,
   windowRef = globalThis.window,
@@ -56,11 +88,18 @@ export async function initializeFormIntegration({
 
   await Promise.all(
     candidates.map(async ({ form, marker }) => {
-      const resolution = await resolveForm({
-        marker,
-        locationRef: windowRef?.location,
-        fetchImpl,
-      });
+      const releasePendingGuard = installPendingSubmitGuard(form, documentRef);
+      let resolution;
+
+      try {
+        resolution = await resolveForm({
+          marker,
+          locationRef: windowRef?.location,
+          fetchImpl,
+        });
+      } finally {
+        releasePendingGuard();
+      }
 
       if (resolution === null) {
         return;

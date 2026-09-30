@@ -34,6 +34,7 @@ final class FormResolutionController extends AbstractController
     public function resolve(Request $request): Response
     {
         $origin = $request->headers->get('Origin');
+        $origin = is_string($origin) && trim($origin) !== '' ? $origin : null;
 
         try {
             if (!$request->isSecure() || strlen((string) $request->getQueryString()) > 8192) {

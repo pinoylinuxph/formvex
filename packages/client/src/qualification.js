@@ -2,6 +2,7 @@ import {
   collectSubmissionData,
   findFormCandidates,
   initializeQualificationIntegration,
+  installPendingSubmitGuard,
 } from './form-integration.js';
 
 export const QUALIFICATION_SCHEMA_VERSION = 1;
@@ -26,12 +27,19 @@ export async function runQualification({
     return null;
   }
 
-  const forms = findFormCandidates(documentRef)
-    .slice(0, MAX_FORMS)
-    .map(({ form, marker }) => ({
-      form_marker: marker,
-      field_shape: collectSubmissionData(form).field_shape.slice(0, MAX_CONTROLS),
-    }));
+  const candidates = findFormCandidates(documentRef).slice(0, MAX_FORMS);
+  const forms = candidates.map(({ form, marker }) => ({
+    form_marker: marker,
+    field_shape: collectSubmissionData(form).field_shape.slice(0, MAX_CONTROLS),
+  }));
+  const pendingGuards = candidates.map(({ form }) => ({
+    form,
+    release: installPendingSubmitGuard(
+      form,
+      documentRef,
+      'Qualification is still loading. Wait until the page says it is ready, then try again.',
+    ),
+  }));
   const body = JSON.stringify({
     schema_version: QUALIFICATION_SCHEMA_VERSION,
     qualification: token,
@@ -75,6 +83,11 @@ export async function runQualification({
       resolution: result,
       qualificationToken: result.qualification_token,
     });
+
+    if (attached.length === 1) {
+      pendingGuards.forEach(({ release }) => release());
+    }
+
     showQualificationResult(
       documentRef,
       attached.length === 1,
