@@ -12,10 +12,13 @@ final readonly class FormResolutionResponse
         public string $publicFormId,
         public int $configurationVersion,
         public string $formMarker,
+        public bool $captchaEnabled = false,
+        public string $captchaProvider = 'turnstile',
+        public string $captchaSiteKey = '',
     ) {
     }
 
-    /** @return array{schema_version: int, public_form_id: string, configuration_version: int, form_marker: string} */
+    /** @return array{schema_version: int, public_form_id: string, configuration_version: int, form_marker: string, captcha: array{enabled: bool, provider: string, site_key: string}} */
     public function toArray(): array
     {
         return [
@@ -23,6 +26,11 @@ final readonly class FormResolutionResponse
             'public_form_id' => $this->publicFormId,
             'configuration_version' => $this->configurationVersion,
             'form_marker' => $this->formMarker,
+            'captcha' => [
+                'enabled' => $this->captchaEnabled,
+                'provider' => $this->captchaProvider,
+                'site_key' => $this->captchaEnabled ? $this->captchaSiteKey : '',
+            ],
         ];
     }
 }

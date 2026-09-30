@@ -3,6 +3,13 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Core\Submission\CanonicalSubmissionHasher:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Domain\Submission\Contract\SubmissionStore:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoSubmissionStore
+
     Formvex\Spoke\:
         resource: '../src/'
         exclude:
@@ -27,6 +34,35 @@ services:
     Formvex\Spoke\Migrations\Version000005CreateFormDiscovery:
         autowire: true
         autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000006CreateSubmissions:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000007CreateSubmissionAbuse:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Domain\Abuse\Contract\AbuseSettingsStore:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoAbuseStore
+
+    Formvex\Spoke\Domain\Abuse\Contract\RateLimitStore:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoAbuseStore
+
+    Formvex\Spoke\Domain\Abuse\Contract\CaptchaOutageStore:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoAbuseStore
+
+    Formvex\Spoke\Domain\Abuse\Contract\CaptchaSecretStore:
+        alias: Formvex\Spoke\Infrastructure\Security\LocalCaptchaSecretStore
+
+    Formvex\Spoke\Domain\Abuse\Contract\CaptchaVerifier:
+        alias: Formvex\Spoke\Infrastructure\Captcha\CurlTurnstileVerifier
+
+    Formvex\Spoke\Infrastructure\Captcha\TurnstileHttpClient:
+        alias: Formvex\Spoke\Infrastructure\Captcha\CurlTurnstileHttpClient
+
+    Formvex\Spoke\Http\Submission\RateLimitIdentityResolver:
+        alias: Formvex\Spoke\Http\Submission\TrustedProxyIpResolver
 
     Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration:
         arguments:

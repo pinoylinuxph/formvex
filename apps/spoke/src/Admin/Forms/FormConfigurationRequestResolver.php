@@ -25,6 +25,8 @@ final class FormConfigurationRequestResolver
             'form_marker',
             'recipient',
             'subject',
+            'captcha_enabled',
+            'captcha_site_key',
             'fields_json',
             'revision',
         ]);
@@ -41,6 +43,11 @@ final class FormConfigurationRequestResolver
         }
 
         $fields = $this->fieldDefinitions($this->stringValue($payload, 'fields_json'));
+        $captchaEnabled = ($payload['captcha_enabled'] ?? '0') === '1';
+
+        if (isset($payload['captcha_enabled']) && !in_array($payload['captcha_enabled'], ['0', '1'], true)) {
+            throw new FormConfigurationFailure('captcha_enabled_invalid', 'The CAPTCHA enabled value is invalid. Choose enabled or disabled.', ['captcha_enabled' => 'Choose enabled or disabled.']);
+        }
 
         return new FormDraftRequest(
             new FormConfigurationDraftData(
@@ -53,6 +60,8 @@ final class FormConfigurationRequestResolver
                 trim($this->stringValue($payload, 'recipient')),
                 trim($this->stringValue($payload, 'subject')),
                 $fields,
+                $captchaEnabled,
+                trim($payload['captcha_site_key'] ?? ''),
             ),
             $revision,
             $this->stringValue($payload, '_token'),

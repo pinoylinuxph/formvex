@@ -170,11 +170,62 @@ describe('website form integration client', () => {
 
     expect(result).toEqual({
       schema_version: 1,
+      page_path: '/',
       attempt_id: '0195f2b8-7c3a-4f42-8c11-4ac3b865e092',
       configuration_version: 3,
       form_marker: 'contact-form',
       fields: { name: 'Ada' },
       field_shape: [{ control_name: 'name', control_type: 'text' }],
+    });
+  });
+
+  it('keeps abuse values outside business fields in the versioned envelope', () => {
+    const formRef = form('contact-form', [control({ name: 'name', value: 'Ada' })]);
+    formRef.__formvexHoneypotControl = { value: 'filled-by-bot' };
+    formRef.__formvexCaptchaToken = 'captcha-token';
+
+    expect(
+      createSubmissionEnvelope(
+        formRef,
+        {
+          public_form_id: 'public-contact',
+          configuration_version: 3,
+          form_marker: 'contact-form',
+        },
+        '0195f2b8-7c3a-4f42-8c11-4ac3b865e092',
+      ),
+    ).toMatchObject({
+      fields: { name: 'Ada' },
+      honeypot: 'filled-by-bot',
+      captcha_token: 'captcha-token',
+    });
+  });
+
+  it('accepts the public CAPTCHA resolution and preserves a safe service message', async () => {
+    await expect(
+      resolveForm({
+        marker: 'contact-form',
+        locationRef: { pathname: '/' },
+        fetchImpl: async () => ({
+          status: 200,
+          json: async () => ({
+            schema_version: 1,
+            public_form_id: 'public-contact',
+            configuration_version: 3,
+            form_marker: 'contact-form',
+            captcha: { enabled: true, provider: 'turnstile', site_key: 'site-key' },
+          }),
+        }),
+      }),
+    ).resolves.toMatchObject({ captcha: { enabled: true, provider: 'turnstile' } });
+
+    expect(
+      mapSubmissionResponse(503, {
+        error: { message: 'The form security service is temporarily unavailable.' },
+      }),
+    ).toMatchObject({
+      state: 'uncertain',
+      message: 'The form security service is temporarily unavailable.',
     });
   });
 

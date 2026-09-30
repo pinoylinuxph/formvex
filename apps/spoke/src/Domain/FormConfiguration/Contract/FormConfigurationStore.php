@@ -36,5 +36,7 @@ interface FormConfigurationStore
 
     public function resolveActive(PrivateStoragePaths $paths, PageIdentity $page): ?PublicFormResolution;
 
+    public function findActive(PrivateStoragePaths $paths, string $publicId): ?FormConfigurationRecord;
+
     public function recordAudit(PrivateStoragePaths $paths, string $eventName, string $outcome, DateTimeImmutable $occurredAt): void;
 }

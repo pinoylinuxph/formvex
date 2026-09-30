@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Formvex\Spoke\Application\FormConfiguration;
 
+use Formvex\Spoke\Domain\Abuse\Contract\CaptchaSecretStore;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\FormConfiguration\Contract\FormConfigurationStore;
 use Formvex\Spoke\Domain\FormConfiguration\Exception\FormConfigurationFailure;
@@ -27,6 +28,7 @@ final readonly class FormConfigurationService
         private InstallationSettingsStore $settingsStore,
         private IdentifierGenerator $identifierGenerator,
         private Clock $clock,
+        private ?CaptchaSecretStore $captchaSecretStore = null,
     ) {
     }
 
@@ -140,6 +142,10 @@ final readonly class FormConfigurationService
 
         if (trim($draft->subject) === '') {
             $errors['subject'] = 'Enter a subject before publishing.';
+        }
+
+        if ($draft->captchaEnabled && ($this->captchaSecretStore === null || !$this->captchaSecretStore->isConfigured($paths, 'a'))) {
+            $errors['captcha_enabled'] = 'Configure the Turnstile secret key in Settings before publishing a CAPTCHA-enabled form.';
         }
 
         if ($draft->fields === []) {

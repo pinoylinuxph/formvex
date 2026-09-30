@@ -68,6 +68,7 @@ export async function initializeFormIntegration({
 
       attachForm(form, resolution, {
         documentRef,
+        windowRef,
         fetchImpl,
         storageRef,
         cryptoRef,
@@ -161,17 +162,35 @@ export function collectSubmissionData(form) {
   return { fields, field_shape: fieldShape };
 }
 
-export function createSubmissionEnvelope(form, resolution, attemptId) {
+export function createSubmissionEnvelope(
+  form,
+  resolution,
+  attemptId,
+  pagePath = globalThis.window?.location?.pathname || '/',
+) {
   const { fields, field_shape: fieldShape } = collectSubmissionData(form);
+  const honeypotControl = form?.__formvexHoneypotControl;
+  const captchaToken = form?.__formvexCaptchaToken;
 
-  return {
+  const envelope = {
     schema_version: SUBMISSION_SCHEMA_VERSION,
+    page_path: pagePath,
     attempt_id: attemptId,
     configuration_version: resolution.configuration_version,
     form_marker: resolution.form_marker,
     fields,
     field_shape: fieldShape,
   };
+
+  if (honeypotControl) {
+    envelope.honeypot = typeof honeypotControl.value === 'string' ? honeypotControl.value : '';
+  }
+
+  if (typeof captchaToken === 'string') {
+    envelope.captcha_token = captchaToken;
+  }
+
+  return envelope;
 }
 
 export function mapSubmissionResponse(status, payload) {
@@ -219,13 +238,17 @@ export function mapSubmissionResponse(status, payload) {
   }
 
   if (status >= 500 && status <= 599) {
-    return { state: 'uncertain', message: defaultMessage(status), fieldErrors };
+    return { state: 'uncertain', message, fieldErrors };
   }
 
   return { state: 'uncertain', message: defaultMessage(status), fieldErrors };
 }
 
-function attachForm(form, resolution, { documentRef, fetchImpl, storageRef, cryptoRef, pagePath }) {
+function attachForm(
+  form,
+  resolution,
+  { documentRef, windowRef, fetchImpl, storageRef, cryptoRef, pagePath },
+) {
   let state = 'ready';
   let attemptId = null;
   let attemptInvalidated = false;
@@ -233,6 +256,8 @@ function attachForm(form, resolution, { documentRef, fetchImpl, storageRef, cryp
     resolution.form_marker,
   )}`;
   const originalDisabledState = new Map();
+  form.__formvexHoneypotControl = addHoneypot(form, documentRef);
+  const captchaState = setupCaptcha(form, resolution, documentRef, windowRef);
   const showInvalidFeedback = () => {
     state = 'invalid';
     renderFeedback(form, documentRef, {
@@ -262,6 +287,16 @@ function attachForm(form, resolution, { documentRef, fetchImpl, storageRef, cryp
       return;
     }
 
+    if (resolution.captcha?.enabled && !captchaState.token) {
+      renderFeedback(form, documentRef, {
+        state: 'rejected',
+        message: 'Complete the security challenge before submitting this form.',
+        fieldErrors: [],
+      });
+      restoreSubmitControls(form, originalDisabledState);
+      return;
+    }
+
     state = 'submitting';
     disableSubmitControls(form, originalDisabledState);
 
@@ -272,7 +307,7 @@ function attachForm(form, resolution, { documentRef, fetchImpl, storageRef, cryp
         ? null
         : getAttemptId(resolution, pagePath, storageRef, cryptoRef, attemptId);
       attemptInvalidated = false;
-      envelope = createSubmissionEnvelope(form, resolution, attemptId);
+      envelope = createSubmissionEnvelope(form, resolution, attemptId, pagePath);
     } catch {
       state = 'unavailable';
       renderFeedback(form, documentRef, {
@@ -303,6 +338,8 @@ function attachForm(form, resolution, { documentRef, fetchImpl, storageRef, cryp
         removeAttemptId(resolution, pagePath, storageRef);
         attemptId = null;
       } else {
+        form.__formvexCaptchaToken = null;
+        resetCaptcha(captchaState, windowRef);
         renderFieldErrors(form, result.fieldErrors || [], documentRef, feedbackInstanceId);
       }
 
@@ -394,6 +431,8 @@ function controlValue(control, type) {
 }
 
 function isResolutionPayload(payload, marker) {
+  const captcha = payload?.captcha;
+
   return (
     isObject(payload) &&
     payload.schema_version === 1 &&
@@ -402,8 +441,114 @@ function isResolutionPayload(payload, marker) {
     payload.public_form_id.length <= 128 &&
     Number.isInteger(payload.configuration_version) &&
     payload.configuration_version > 0 &&
-    payload.form_marker === marker
+    payload.form_marker === marker &&
+    (!captcha ||
+      (isObject(captcha) &&
+        typeof captcha.enabled === 'boolean' &&
+        captcha.provider === 'turnstile' &&
+        typeof captcha.site_key === 'string' &&
+        captcha.site_key.length <= 2048 &&
+        (!captcha.enabled || captcha.site_key.length > 0)))
   );
+}
+
+function addHoneypot(form, documentRef) {
+  if (typeof documentRef?.createElement !== 'function') {
+    return null;
+  }
+
+  const honeypot = documentRef.createElement('input');
+  honeypot.type = 'text';
+  honeypot.name = 'formvex_website';
+  honeypot.setAttribute('data-formvex-honeypot', 'true');
+  honeypot.setAttribute('aria-hidden', 'true');
+  honeypot.setAttribute('autocomplete', 'off');
+  honeypot.tabIndex = -1;
+  honeypot.style.position = 'fixed';
+  honeypot.style.left = '-10000px';
+  honeypot.style.top = 'auto';
+  honeypot.style.width = '1px';
+  honeypot.style.height = '1px';
+  honeypot.style.opacity = '0';
+  honeypot.style.pointerEvents = 'none';
+
+  const host = documentRef.body || form.parentNode;
+
+  if (host && typeof host.append === 'function') {
+    host.append(honeypot);
+  }
+
+  return honeypot;
+}
+
+function setupCaptcha(form, resolution, documentRef, windowRef) {
+  const state = { token: null, widgetId: null };
+
+  if (!resolution.captcha?.enabled || typeof documentRef?.createElement !== 'function') {
+    return state;
+  }
+
+  const wrapper = documentRef.createElement('div');
+  wrapper.className = 'formvex-captcha';
+  wrapper.setAttribute('data-formvex-captcha', 'true');
+  wrapper.setAttribute('aria-label', 'Security challenge');
+  form.append(wrapper);
+
+  const render = () => {
+    if (state.widgetId !== null || typeof windowRef?.turnstile?.render !== 'function') {
+      return;
+    }
+
+    state.widgetId = windowRef.turnstile.render(wrapper, {
+      sitekey: resolution.captcha.site_key,
+      action: 'formvex',
+      callback: (token) => {
+        state.token = typeof token === 'string' ? token : null;
+        form.__formvexCaptchaToken = state.token;
+      },
+      'expired-callback': () => {
+        state.token = null;
+        form.__formvexCaptchaToken = null;
+      },
+      'error-callback': () => {
+        state.token = null;
+        form.__formvexCaptchaToken = null;
+      },
+    });
+  };
+
+  if (typeof windowRef?.turnstile?.render === 'function') {
+    render();
+  } else {
+    loadTurnstileScript(documentRef, render);
+  }
+
+  return state;
+}
+
+function loadTurnstileScript(documentRef, onReady) {
+  const existing = documentRef.querySelector?.('script[data-formvex-turnstile]');
+
+  if (existing) {
+    existing.addEventListener?.('load', onReady, { once: true });
+    return;
+  }
+
+  const script = documentRef.createElement('script');
+  script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  script.async = true;
+  script.defer = true;
+  script.setAttribute('data-formvex-turnstile', 'true');
+  script.addEventListener('load', onReady, { once: true });
+  (documentRef.head || documentRef.body)?.append(script);
+}
+
+function resetCaptcha(state, windowRef) {
+  state.token = null;
+
+  if (state.widgetId !== null && typeof windowRef?.turnstile?.reset === 'function') {
+    windowRef.turnstile.reset(state.widgetId);
+  }
 }
 
 function isAcceptedPayload(payload) {

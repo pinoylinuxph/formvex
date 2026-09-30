@@ -236,6 +236,45 @@
         </form>
     </section>
 
+    <section class="fv-panel fv-settings-panel" aria-labelledby="abuse-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Public abuse controls</p>
+            <h2 id="abuse-heading">Rate limits and CAPTCHA</h2>
+            <p>These controls apply to every active public form. Rate-limit identities are privacy-preserving hashes; forwarded visitor IPs are trusted only from the proxy CIDRs listed below.</p>
+        </header>
+        {% if abuseSettings.outageState.open %}
+            <div class="fv-alert fv-alert-danger" role="alert"><strong>CAPTCHA provider unavailable.</strong><span>Enabled CAPTCHA forms remain blocked until verification succeeds. Last reason: {{ abuseSettings.outageState.lastFailureCode|default('provider unavailable') }}.</span></div>
+        {% endif %}
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_abuse_update') }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'abuse-per-form-short', name: 'per_form_short_limit', label: 'New attempts per form / 10 minutes', type: 'number', value: formData.per_form_short_limit, min: 1, max: 1000, help: 'Default: 5. Invalid and suspected-spam new attempts count; matching accepted retries do not.', error: fieldErrors.per_form_short_limit|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'abuse-per-form-hour', name: 'per_form_hour_limit', label: 'New attempts per form / hour', type: 'number', value: formData.per_form_hour_limit, min: 1, max: 10000, help: 'Default: 20.', error: fieldErrors.per_form_hour_limit|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'abuse-installation-hour', name: 'installation_hour_limit', label: 'New attempts per IP / hour', type: 'number', value: formData.installation_hour_limit, min: 1, max: 10000, help: 'Default: 30 across all active forms.', error: fieldErrors.installation_hour_limit|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'abuse-flood-minute', name: 'flood_minute_limit', label: 'All submission requests / minute', type: 'number', value: formData.flood_minute_limit, min: 10, max: 10000, help: 'Default: 60. This cheap guard also counts malformed and retry requests.', error: fieldErrors.flood_minute_limit|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'abuse-flood-hour', name: 'flood_hour_limit', label: 'All submission requests / hour', type: 'number', value: formData.flood_hour_limit, min: 10, max: 100000, help: 'Default: 300.', error: fieldErrors.flood_hour_limit|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'turnstile-secret', name: 'turnstile_secret', label: 'Turnstile secret key', type: 'password', value: '', autocomplete: 'new-password', help: abuseSettings.turnstileSecretConfigured ? 'Leave blank to keep the current private secret.' : 'Required before publishing a CAPTCHA-enabled form.', error: fieldErrors.turnstile_secret|default(null)} only %}
+            </div>
+            <div class="fv-field">
+                <label for="trusted-proxy-cidrs">Trusted reverse-proxy CIDRs</label>
+                <textarea class="fv-input" id="trusted-proxy-cidrs" name="trusted_proxy_cidrs" rows="4" spellcheck="false">{{ formData.trusted_proxy_cidrs }}</textarea>
+                <p class="fv-field-help">Optional: one CIDR per line, such as 203.0.113.0/24. Leave empty to use the direct connection address and ignore forwarded IP headers.</p>
+                {% if fieldErrors.trusted_proxy_cidrs|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.trusted_proxy_cidrs }}</p>{% endif %}
+            </div>
+            {% include '@platform_ui/components/form_action_bar.html.twig' with {helpText: 'Defaults: 5 / 20 / 30 attempts and 60 / 300 request flood limits.', submitLabel: 'Save abuse controls'} only %}
+        </form>
+        <div class="fv-action-bar">
+            <form method="post" action="{{ path('spoke_admin_settings_abuse_reset') }}">
+                <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="confirm_action" value="1">
+                <button class="fv-button fv-button-secondary" type="submit">Restore abuse defaults</button>
+            </form>
+            <form method="post" action="{{ path('spoke_admin_settings_abuse_clear_counters') }}">
+                <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="confirm_action" value="1">
+                <button class="fv-button fv-button-secondary" type="submit">Clear active counters</button>
+            </form>
+        </div>
+    </section>
+
     <section class="fv-panel fv-settings-panel" aria-labelledby="smtp-test-heading">
         <header class="fv-section-heading">
             <p class="fv-eyebrow">Explicit action</p>

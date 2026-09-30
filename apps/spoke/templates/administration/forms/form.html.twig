@@ -53,6 +53,25 @@
             </div>
         </section>
 
+        <section class="fv-panel fv-settings-panel" aria-labelledby="form-captcha-heading">
+            <header class="fv-section-heading">
+                <p class="fv-eyebrow">Optional visitor protection</p>
+                <h2 id="form-captcha-heading">Cloudflare Turnstile CAPTCHA</h2>
+                <p>When enabled, the Formvex browser client renders the challenge automatically. Configure the private Turnstile secret in Settings before publishing this form.</p>
+            </header>
+            <div class="fv-settings-grid">
+                <div class="fv-field">
+                    <label for="form-captcha-enabled">CAPTCHA protection</label>
+                    <select class="fv-input" id="form-captcha-enabled" name="captcha_enabled">
+                        <option value="0"{% if formData.captcha_enabled != '1' %} selected{% endif %}>Disabled</option>
+                        <option value="1"{% if formData.captcha_enabled == '1' %} selected{% endif %}>Enabled</option>
+                    </select>
+                    {% if fieldErrors.captcha_enabled|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.captcha_enabled }}</p>{% endif %}
+                </div>
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-captcha-site-key', name: 'captcha_site_key', label: 'Turnstile site key', value: formData.captcha_site_key, help: 'This is the public site key supplied by Cloudflare. It is sent only to the approved website browser when CAPTCHA is enabled.', error: fieldErrors.captcha_site_key|default(null)} only %}
+            </div>
+        </section>
+
         <section class="fv-panel fv-settings-panel" aria-labelledby="fields-heading">
             <header class="fv-section-heading">
                 <p class="fv-eyebrow">Mapping contract</p>

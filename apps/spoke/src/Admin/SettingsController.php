@@ -6,8 +6,10 @@ namespace Formvex\Spoke\Admin;
 
 use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
+use Formvex\Spoke\Application\Abuse\SubmissionAbuseSettingsService;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
+use Formvex\Spoke\Domain\Abuse\AbuseSettingsSnapshot;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\InstallationSettings\Exception\InstallationSettingsFailure;
 use Formvex\Spoke\Domain\InstallationSettings\SettingsSnapshot;
@@ -29,6 +31,7 @@ final class SettingsController extends AbstractController
         private readonly LocalAdministratorService $administratorService,
         private readonly SettingsRequestResolver $settingsRequestResolver,
         private readonly InstallationSettingsService $settingsService,
+        private readonly SubmissionAbuseSettingsService $abuseSettingsService,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
     ) {
     }
@@ -89,6 +92,51 @@ final class SettingsController extends AbstractController
     public function saveDiscovery(Request $request): Response
     {
         return $this->save($request, 'discovery', ['discovery_payload_limit_kib']);
+    }
+
+    #[Route('/formvex/settings/abuse', name: 'spoke_admin_settings_abuse_update', methods: ['POST'])]
+    public function saveAbuse(Request $request): Response
+    {
+        $context = $this->authenticatedContext($request);
+
+        if ($context === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+
+        $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+        $abuseSnapshot = $this->abuseSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+        $formData = $this->formData($snapshot);
+
+        try {
+            $payload = $this->settingsRequestResolver->payload($request, ['_token', 'per_form_short_limit', 'per_form_hour_limit', 'installation_hour_limit', 'flood_minute_limit', 'flood_hour_limit', 'trusted_proxy_cidrs', 'turnstile_secret']);
+            $this->assertCsrf($context['session'], $payload['_token'] ?? '');
+            unset($payload['_token']);
+            $secret = trim($payload['turnstile_secret'] ?? '');
+            unset($payload['turnstile_secret']);
+            $abuseSnapshot = $this->abuseSettingsService->save($this->runtimeConfiguration->applicationRoot, $payload);
+
+            if ($secret !== '') {
+                $abuseSnapshot = $this->abuseSettingsService->saveTurnstileSecret($this->runtimeConfiguration->applicationRoot, $secret);
+            }
+
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, array_merge($formData, ['turnstile_secret' => '']), 'Abuse-control settings were saved. Existing counters remain active until their configured windows expire.', 'success', '', [], $abuseSnapshot);
+        } catch (AdministratorFailure $failure) {
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger', '', [], $abuseSnapshot);
+        } catch (InstallationSettingsFailure $failure) {
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', '', $failure->fieldErrors, $abuseSnapshot);
+        }
+    }
+
+    #[Route('/formvex/settings/abuse/reset', name: 'spoke_admin_settings_abuse_reset', methods: ['POST'])]
+    public function resetAbuse(Request $request): Response
+    {
+        return $this->abuseAction($request, 'reset');
+    }
+
+    #[Route('/formvex/settings/abuse/clear-counters', name: 'spoke_admin_settings_abuse_clear_counters', methods: ['POST'])]
+    public function clearAbuseCounters(Request $request): Response
+    {
+        return $this->abuseAction($request, 'clear');
     }
 
     #[Route('/formvex/settings/smtp-test', name: 'spoke_admin_settings_smtp_test', methods: ['POST'])]
@@ -181,10 +229,20 @@ final class SettingsController extends AbstractController
         string $variant = 'information',
         string $testRecipient = '',
         array $fieldErrors = [],
+        ?AbuseSettingsSnapshot $abuseSnapshot = null,
     ): Response {
         $sessionId = $this->sessionId($request) ?? $sessionIdHash;
         $csrfToken = $this->csrfToken($request, $sessionId);
-        $formData = array_merge($this->formData($snapshot), $formData);
+        $abuseSnapshot ??= $this->abuseSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+        $formData = array_merge($this->formData($snapshot), [
+            'per_form_short_limit' => (string) $abuseSnapshot->settings->perFormShortLimit,
+            'per_form_hour_limit' => (string) $abuseSnapshot->settings->perFormHourLimit,
+            'installation_hour_limit' => (string) $abuseSnapshot->settings->installationHourLimit,
+            'flood_minute_limit' => (string) $abuseSnapshot->settings->floodMinuteLimit,
+            'flood_hour_limit' => (string) $abuseSnapshot->settings->floodHourLimit,
+            'trusted_proxy_cidrs' => implode("\n", $abuseSnapshot->settings->normalizedTrustedProxyCidrs()),
+            'turnstile_secret' => '',
+        ], $formData);
         $response = $this->render('administration/settings.html.twig', [
             'csrfToken' => $csrfToken,
             'currentRoute' => 'spoke_admin_settings',
@@ -201,6 +259,7 @@ final class SettingsController extends AbstractController
             'message' => $message,
             'messageVariant' => $variant,
             'fieldErrors' => $fieldErrors,
+            'abuseSettings' => $abuseSnapshot,
         ]);
 
         if ($request->cookies->get(self::CSRF_COOKIE) !== $csrfToken) {
@@ -233,7 +292,45 @@ final class SettingsController extends AbstractController
             'cooldown_minutes' => (string) $settings->loginThrottle->cooldownMinutes,
             'discovery_payload_limit_kib' => (string) intdiv($settings->discoveryPayloadLimitBytes, 1024),
             'test_recipient' => '',
+            'per_form_short_limit' => '5',
+            'per_form_hour_limit' => '20',
+            'installation_hour_limit' => '30',
+            'flood_minute_limit' => '60',
+            'flood_hour_limit' => '300',
+            'trusted_proxy_cidrs' => '',
+            'turnstile_secret' => '',
         ];
+    }
+
+    private function abuseAction(Request $request, string $action): Response
+    {
+        $context = $this->authenticatedContext($request);
+
+        if ($context === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+
+        $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+
+        try {
+            $payload = $this->settingsRequestResolver->payload($request, ['_token', 'confirm_action']);
+            $this->assertCsrf($context['session'], $payload['_token'] ?? '');
+
+            if (($payload['confirm_action'] ?? '') !== '1') {
+                throw new InstallationSettingsFailure('abuse_action_confirmation_required', 'Confirm the requested abuse-control action before continuing.');
+            }
+
+            $abuseSnapshot = $action === 'reset'
+                ? $this->abuseSettingsService->resetDefaults($this->runtimeConfiguration->applicationRoot)
+                : $this->abuseSettingsService->clearCounters($this->runtimeConfiguration->applicationRoot);
+            $message = $action === 'reset' ? 'Abuse-control settings were restored to their defaults. Active counters were not cleared.' : 'Active abuse counters were cleared. The configured limits remain unchanged.';
+
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $message, 'success', '', [], $abuseSnapshot);
+        } catch (AdministratorFailure $failure) {
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $this->administratorMessage($failure), 'danger');
+        } catch (InstallationSettingsFailure $failure) {
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, [], $failure->getMessage(), 'danger');
+        }
     }
 
     /** @param \Formvex\Spoke\Domain\Administration\SessionRecord $session */

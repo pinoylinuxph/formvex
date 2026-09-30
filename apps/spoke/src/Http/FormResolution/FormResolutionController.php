@@ -78,6 +78,9 @@ final class FormResolutionController extends AbstractController
                 $resolution->publicFormId,
                 $resolution->configurationVersion,
                 $resolution->formMarker,
+                $resolution->captchaEnabled,
+                $resolution->captchaProvider,
+                $resolution->captchaSiteKey,
             )->toArray(), Response::HTTP_OK);
             $this->headers($response, $origin);
 

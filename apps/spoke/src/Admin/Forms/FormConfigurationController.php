@@ -679,6 +679,8 @@ final class FormConfigurationController extends AbstractController
             'form_marker' => '',
             'recipient' => '',
             'subject' => '',
+            'captcha_enabled' => '0',
+            'captcha_site_key' => '',
             'revision' => '',
         ];
     }
@@ -693,6 +695,8 @@ final class FormConfigurationController extends AbstractController
             'form_marker' => $draft->page->formMarker,
             'recipient' => $draft->recipient,
             'subject' => $draft->subject,
+            'captcha_enabled' => $draft->captchaEnabled ? '1' : '0',
+            'captcha_site_key' => $draft->captchaSiteKey,
             'revision' => (string) $draft->revision,
         ];
     }

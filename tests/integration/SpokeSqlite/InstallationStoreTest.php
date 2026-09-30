@@ -58,8 +58,11 @@ final class InstallationStoreTest extends TestCase
         self::assertSame('0195f2b8-7c3a-7f42-8c11-4ac3b865e092', $first->identity->installationId);
         self::assertSame($first->identity->installationId, $second->identity->installationId);
         $versions = $connection->query('SELECT version FROM schema_migrations')->fetchAll(PDO::FETCH_COLUMN);
-        self::assertSame(['000001', '000002', '000003', '000004', '000005'], $versions);
+        self::assertSame(['000001', '000002', '000003', '000004', '000005', '000006'], $versions);
         self::assertSame(1, $connection->query('SELECT COUNT(*) FROM installation_metadata')->fetchColumn());
+        self::assertSame(1, $connection->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'submissions'")->fetchColumn());
+        self::assertSame(1, $connection->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'submission_attempts'")->fetchColumn());
+        self::assertSame(1, $connection->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'delivery_jobs'")->fetchColumn());
     }
 
     public function testUnknownMigrationStateFailsClosed(): void
@@ -113,9 +116,10 @@ final class InstallationStoreTest extends TestCase
         $initialization = $this->createStore()->initialize($paths);
 
         self::assertFalse($initialization->created);
-        self::assertSame('000005', $initialization->identity->schemaVersion);
-        self::assertSame('000005', $connection->query('SELECT schema_version FROM installation_metadata WHERE singleton_id = 1')->fetchColumn());
+        self::assertSame('000006', $initialization->identity->schemaVersion);
+        self::assertSame('000006', $connection->query('SELECT schema_version FROM installation_metadata WHERE singleton_id = 1')->fetchColumn());
         self::assertSame(1, $connection->query('SELECT COUNT(*) FROM installation_settings')->fetchColumn());
+        self::assertSame(1, $connection->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'delivery_jobs'")->fetchColumn());
     }
 
     private function createStore(): PdoInstallationStore

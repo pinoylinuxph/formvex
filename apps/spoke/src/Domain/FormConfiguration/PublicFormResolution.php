@@ -10,6 +10,9 @@ final readonly class PublicFormResolution
         public string $publicFormId,
         public int $configurationVersion,
         public string $formMarker,
+        public bool $captchaEnabled = false,
+        public string $captchaProvider = 'turnstile',
+        public string $captchaSiteKey = '',
     ) {
     }
 }

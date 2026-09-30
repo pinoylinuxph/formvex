@@ -86,6 +86,7 @@ test('integrates only the resolved form, preserves its controls, and accepts one
   expect(submissions[0].headers.cookie).toBeUndefined();
   expect(submissions[0].body).toMatchObject({
     schema_version: 1,
+    page_path: '/integration',
     configuration_version: 3,
     form_marker: 'contact-form',
     fields: {

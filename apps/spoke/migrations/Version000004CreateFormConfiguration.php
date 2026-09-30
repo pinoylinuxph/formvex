@@ -35,6 +35,8 @@ final class Version000004CreateFormConfiguration implements Migration
             . 'revision INTEGER NOT NULL CHECK (revision >= 1), '
             . "recipient TEXT NOT NULL DEFAULT '', "
             . "subject TEXT NOT NULL DEFAULT '', "
+            . 'captcha_enabled INTEGER NOT NULL DEFAULT 0 CHECK (captcha_enabled IN (0, 1)), '
+            . "captcha_site_key TEXT NOT NULL DEFAULT '', "
             . 'evidence_revision INTEGER NOT NULL DEFAULT 1 CHECK (evidence_revision >= 1), '
             . 'published_at TEXT NULL, '
             . 'created_at TEXT NOT NULL, '

@@ -12,6 +12,8 @@ use Formvex\Spoke\Migrations\Version000002CreateLocalAdministratorAuth;
 use Formvex\Spoke\Migrations\Version000003CreateInstallationSettings;
 use Formvex\Spoke\Migrations\Version000004CreateFormConfiguration;
 use Formvex\Spoke\Migrations\Version000005CreateFormDiscovery;
+use Formvex\Spoke\Migrations\Version000006CreateSubmissions;
+use Formvex\Spoke\Migrations\Version000007CreateSubmissionAbuse;
 use PDO;
 use Throwable;
 
@@ -24,6 +26,8 @@ final readonly class SqliteMigrationRunner
         private Version000004CreateFormConfiguration $formConfigurationMigration,
         private Version000005CreateFormDiscovery $formDiscoveryMigration,
         private Clock $clock,
+        private ?Version000006CreateSubmissions $submissionsMigration = null,
+        private ?Version000007CreateSubmissionAbuse $submissionAbuseMigration = null,
     ) {
     }
 
@@ -37,7 +41,11 @@ final readonly class SqliteMigrationRunner
                 . ')',
             );
 
-            $migrations = [$this->initialMigration, $this->administratorMigration, $this->settingsMigration, $this->formConfigurationMigration, $this->formDiscoveryMigration];
+            $migrations = [$this->initialMigration, $this->administratorMigration, $this->settingsMigration, $this->formConfigurationMigration, $this->formDiscoveryMigration, $this->submissionsMigration ?? new Version000006CreateSubmissions()];
+
+            if ($this->submissionAbuseMigration !== null) {
+                $migrations[] = $this->submissionAbuseMigration;
+            }
             $knownVersions = array_map(
                 static fn (Migration $migration): string => $migration->version(),
                 $migrations,

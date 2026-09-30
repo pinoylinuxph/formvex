@@ -23,6 +23,8 @@ final readonly class FormConfigurationRecord
         public DateTimeImmutable $createdAt,
         public DateTimeImmutable $updatedAt,
         public ?DateTimeImmutable $publishedAt,
+        public bool $captchaEnabled = false,
+        public string $captchaSiteKey = '',
     ) {
     }
 }

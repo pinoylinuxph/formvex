@@ -216,11 +216,13 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
             $updateForm = $connection->prepare('UPDATE form_configurations SET display_name = :display_name, updated_at = :updated_at WHERE id = :id');
             $updateForm->execute(['display_name' => $data->displayName, 'updated_at' => $timestamp, 'id' => $this->integerValue($form, 'id')]);
             $updateVersion = $connection->prepare(
-                'UPDATE form_configuration_versions SET revision = revision + 1, recipient = :recipient, subject = :subject, evidence_revision = evidence_revision + 1, updated_at = :updated_at WHERE id = :id',
+                'UPDATE form_configuration_versions SET revision = revision + 1, recipient = :recipient, subject = :subject, captcha_enabled = :captcha_enabled, captcha_site_key = :captcha_site_key, evidence_revision = evidence_revision + 1, updated_at = :updated_at WHERE id = :id',
             );
             $updateVersion->execute([
                 'recipient' => $data->recipient,
                 'subject' => $data->subject,
+                'captcha_enabled' => $data->captchaEnabled ? 1 : 0,
+                'captcha_site_key' => $data->captchaSiteKey,
                 'updated_at' => $timestamp,
                 'id' => $this->integerValue($draft, 'id'),
             ]);
@@ -327,7 +329,7 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
     {
         $connection = $this->connection($paths);
         $statement = $connection->prepare(
-            "SELECT f.public_id, v.version_number, p.form_marker
+            "SELECT f.public_id, v.version_number, p.form_marker, v.captcha_enabled, v.captcha_site_key
              FROM form_configuration_version_pages p
              INNER JOIN form_configuration_versions v ON v.id = p.version_id AND v.state = 'active'
              INNER JOIN form_configurations f ON f.id = v.form_id AND f.deleted_at IS NULL
@@ -345,7 +347,31 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
             return null;
         }
 
-        return new PublicFormResolution($row['public_id'], $this->integerValue($row, 'version_number'), $row['form_marker']);
+        return new PublicFormResolution(
+            $row['public_id'],
+            $this->integerValue($row, 'version_number'),
+            $row['form_marker'],
+            $this->integerValue($row, 'captcha_enabled') === 1,
+            'turnstile',
+            $this->stringValue($row, 'captcha_site_key'),
+        );
+    }
+
+    public function findActive(PrivateStoragePaths $paths, string $publicId): ?FormConfigurationRecord
+    {
+        $connection = $this->connection($paths);
+        $statement = $connection->prepare(
+            "SELECT v.*, f.public_id, f.display_name, p.host, p.path, p.form_marker
+             FROM form_configuration_versions v
+             INNER JOIN form_configurations f ON f.id = v.form_id
+             INNER JOIN form_configuration_version_pages p ON p.version_id = v.id
+             WHERE f.public_id = :public_id AND f.deleted_at IS NULL AND v.state = 'active'
+             LIMIT 1",
+        );
+        $statement->execute(['public_id' => $publicId]);
+        $row = $this->fetchRow($statement);
+
+        return $row === null ? null : $this->hydrateRecord($connection, $row);
     }
 
     public function recordAudit(PrivateStoragePaths $paths, string $eventName, string $outcome, DateTimeImmutable $occurredAt): void
@@ -405,8 +431,8 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
     private function insertVersion(PDO $connection, int $formId, int $versionNumber, FormConfigurationState $state, int $revision, FormConfigurationDraftData $data, string $timestamp, ?string $publishedAt): int
     {
         $statement = $connection->prepare(
-            'INSERT INTO form_configuration_versions (form_id, version_number, state, revision, recipient, subject, evidence_revision, published_at, created_at, updated_at) '
-            . 'VALUES (:form_id, :version_number, :state, :revision, :recipient, :subject, 1, :published_at, :created_at, :updated_at)',
+            'INSERT INTO form_configuration_versions (form_id, version_number, state, revision, recipient, subject, captcha_enabled, captcha_site_key, evidence_revision, published_at, created_at, updated_at) '
+            . 'VALUES (:form_id, :version_number, :state, :revision, :recipient, :subject, :captcha_enabled, :captcha_site_key, 1, :published_at, :created_at, :updated_at)',
         );
         $statement->execute([
             'form_id' => $formId,
@@ -415,6 +441,8 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
             'revision' => $revision,
             'recipient' => $data->recipient,
             'subject' => $data->subject,
+            'captcha_enabled' => $data->captchaEnabled ? 1 : 0,
+            'captcha_site_key' => $data->captchaSiteKey,
             'published_at' => $publishedAt,
             'created_at' => $timestamp,
             'updated_at' => $timestamp,
@@ -430,14 +458,16 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
     private function insertVersionFromDraft(PDO $connection, array $form, array $draft, int $versionNumber, string $timestamp): int
     {
         $statement = $connection->prepare(
-            'INSERT INTO form_configuration_versions (form_id, version_number, state, revision, recipient, subject, evidence_revision, published_at, created_at, updated_at) '
-            . "VALUES (:form_id, :version_number, 'published', 1, :recipient, :subject, 1, :published_at, :created_at, :updated_at)",
+            'INSERT INTO form_configuration_versions (form_id, version_number, state, revision, recipient, subject, captcha_enabled, captcha_site_key, evidence_revision, published_at, created_at, updated_at) '
+            . "VALUES (:form_id, :version_number, 'published', 1, :recipient, :subject, :captcha_enabled, :captcha_site_key, 1, :published_at, :created_at, :updated_at)",
         );
         $statement->execute([
             'form_id' => $this->integerValue($form, 'id'),
             'version_number' => $versionNumber,
             'recipient' => $this->stringValue($draft, 'recipient'),
             'subject' => $this->stringValue($draft, 'subject'),
+            'captcha_enabled' => $this->integerValue($draft, 'captcha_enabled'),
+            'captcha_site_key' => $this->stringValue($draft, 'captcha_site_key'),
             'published_at' => $timestamp,
             'created_at' => $timestamp,
             'updated_at' => $timestamp,
@@ -598,6 +628,8 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
             $this->timestamp($this->stringValue($row, 'created_at')),
             $this->timestamp($this->stringValue($row, 'updated_at')),
             $row['published_at'] === null ? null : $this->timestamp($this->stringValue($row, 'published_at')),
+            $this->integerValue($row, 'captcha_enabled') === 1,
+            $this->stringValue($row, 'captcha_site_key'),
         );
     }
 

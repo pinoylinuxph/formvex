@@ -7,9 +7,12 @@ namespace Formvex\Tests\System\Spoke;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Console\BootstrapAdministratorCommand;
 use Formvex\Spoke\Console\InstallCommand;
+use Formvex\Spoke\Domain\Submission\Contract\SubmissionStore;
+use Formvex\Spoke\Domain\Submission\Exception\SubmissionFailure;
 use Formvex\Spoke\Kernel;
 use PDO;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpFoundation\Request;
@@ -172,6 +175,137 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertStringNotContainsString('owner@logoslab.xyz', (string) $notFound->getContent());
     }
 
+    public function testPublicSubmissionAcceptsWithoutAdministratorCookieAndRecoversMatchingRetry(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $fields = json_encode([[
+            'field_key' => 'message',
+            'control_name' => 'message',
+            'control_type' => 'textarea',
+            'display_label' => 'Message',
+            'parameter_key' => 'message',
+            'ordinal' => 0,
+            'required' => true,
+            'max_length' => 10000,
+            'choices' => [],
+        ]], JSON_THROW_ON_ERROR);
+        $created = $this->request('POST', '/formvex/forms', [
+            '_token' => $csrf,
+            'display_name' => 'Contact form',
+            'page_host' => 'logoslab.xyz',
+            'page_path' => '/',
+            'form_marker' => 'contactForm',
+            'recipient' => 'owner@logoslab.xyz',
+            'subject' => 'Contact message',
+            'fields_json' => $fields,
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        $location = (string) $created->headers->get('Location');
+        preg_match('#/formvex/forms/([0-9a-f-]+)$#', $location, $matches);
+        $publicFormId = $matches[1] ?? '';
+        $published = $this->request('POST', '/formvex/forms/' . $publicFormId . '/publish', ['_token' => $csrf, 'revision' => '1'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $published->getStatusCode());
+        $this->activate($publicFormId);
+
+        $payload = [
+            'schema_version' => 1,
+            'page_path' => '/',
+            'form_marker' => 'contactForm',
+            'configuration_version' => 1,
+            'attempt_id' => '0195f2b8-7c3a-4f42-8c11-4ac3b865e092',
+            'fields' => ['message' => 'A visitor message'],
+            'field_shape' => [['control_name' => 'message', 'control_type' => 'textarea']],
+        ];
+        $headers = ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://logoslab.xyz'];
+        $accepted = $this->jsonRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', $payload, $headers);
+        self::assertSame(Response::HTTP_ACCEPTED, $accepted->getStatusCode());
+        $acceptedBody = json_decode((string) $accepted->getContent(), true, 4, JSON_THROW_ON_ERROR);
+        self::assertSame('Your message has been received.', $acceptedBody['acknowledgement']);
+        self::assertArrayHasKey('receipt_id', $acceptedBody);
+        self::assertStringNotContainsString('A visitor message', (string) $accepted->getContent());
+        self::assertSame('https://logoslab.xyz', $accepted->headers->get('Access-Control-Allow-Origin'));
+
+        $retry = $this->jsonRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', $payload, $headers);
+        $retryBody = json_decode((string) $retry->getContent(), true, 4, JSON_THROW_ON_ERROR);
+        self::assertSame(Response::HTTP_ACCEPTED, $retry->getStatusCode());
+        self::assertSame($acceptedBody['receipt_id'], $retryBody['receipt_id']);
+
+        $changed = $payload;
+        $changed['fields']['message'] = 'A changed visitor message';
+        $conflict = $this->jsonRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', $changed, $headers);
+        $conflictBody = json_decode((string) $conflict->getContent(), true, 4, JSON_THROW_ON_ERROR);
+        self::assertSame(Response::HTTP_CONFLICT, $conflict->getStatusCode());
+        self::assertSame('attempt_conflict', $conflictBody['error']['code']);
+        self::assertStringNotContainsString('A changed visitor message', (string) $conflict->getContent());
+
+        $invalidJson = $this->rawRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', '{', array_merge($headers, ['CONTENT_TYPE' => 'application/json']));
+        self::assertSame(Response::HTTP_BAD_REQUEST, $invalidJson->getStatusCode());
+        self::assertSame('request_invalid', json_decode((string) $invalidJson->getContent(), true, 4, JSON_THROW_ON_ERROR)['error']['code']);
+
+        $invalidField = $payload;
+        $invalidField['fields']['message'] = '';
+        $invalidResponse = $this->jsonRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', $invalidField, $headers);
+        $invalidBody = json_decode((string) $invalidResponse->getContent(), true, 8, JSON_THROW_ON_ERROR);
+        self::assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $invalidResponse->getStatusCode());
+        self::assertSame('required', $invalidBody['error']['fields'][0]['code']);
+
+        $oversized = $this->rawRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', str_repeat('x', 131073), array_merge($headers, ['CONTENT_TYPE' => 'application/json', 'CONTENT_LENGTH' => '131073']));
+        self::assertSame(Response::HTTP_REQUEST_ENTITY_TOO_LARGE, $oversized->getStatusCode());
+
+        $untrusted = $this->jsonRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', $payload, ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://evil.example']);
+        self::assertSame(Response::HTTP_NOT_FOUND, $untrusted->getStatusCode());
+        self::assertNull($untrusted->headers->get('Access-Control-Allow-Origin'));
+
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        self::assertSame(1, (int) $connection->query('SELECT COUNT(*) FROM submissions')->fetchColumn());
+        self::assertSame(1, (int) $connection->query('SELECT COUNT(*) FROM submission_attempts')->fetchColumn());
+        self::assertSame(1, (int) $connection->query('SELECT COUNT(*) FROM delivery_jobs')->fetchColumn());
+    }
+
+    public function testPublicSubmissionMapsStorageFailureToSafe503Response(): void
+    {
+        $publicFormId = $this->createActiveSubmissionForm();
+        $store = self::createMock(SubmissionStore::class);
+        $store->expects(self::once())->method('accept')->willThrowException(new SubmissionFailure(
+            'storage_unavailable',
+            'Formvex could not safely store your message. Your message was not accepted. Please try again later.',
+        ));
+        self::getContainer()->set(SubmissionStore::class, $store);
+
+        $response = $this->jsonRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', $this->submissionPayload(), [
+            'HTTP_HOST' => 'logoslab.xyz',
+            'HTTP_ORIGIN' => 'https://logoslab.xyz',
+        ]);
+        $body = json_decode((string) $response->getContent(), true, 4, JSON_THROW_ON_ERROR);
+
+        self::assertSame(Response::HTTP_SERVICE_UNAVAILABLE, $response->getStatusCode());
+        self::assertSame('storage_unavailable', $body['error']['code']);
+        self::assertStringContainsString('not accepted', $body['error']['message']);
+        self::assertNotSame('', $body['request_id']);
+        self::assertStringNotContainsString('visitor message', (string) $response->getContent());
+        self::assertSame('no-store, private', $response->headers->get('Cache-Control'));
+    }
+
+    public function testPublicSubmissionMapsUnexpectedFailureToSafe500Response(): void
+    {
+        $publicFormId = $this->createActiveSubmissionForm();
+        $store = self::createMock(SubmissionStore::class);
+        $store->expects(self::once())->method('accept')->willThrowException(new RuntimeException('synthetic secret path /private/database.sqlite'));
+        self::getContainer()->set(SubmissionStore::class, $store);
+
+        $response = $this->jsonRequest('POST', '/formvex/api/v1/forms/' . $publicFormId . '/submissions', $this->submissionPayload(), [
+            'HTTP_HOST' => 'logoslab.xyz',
+            'HTTP_ORIGIN' => 'https://logoslab.xyz',
+        ]);
+        $body = json_decode((string) $response->getContent(), true, 4, JSON_THROW_ON_ERROR);
+
+        self::assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $response->getStatusCode());
+        self::assertSame('internal_error', $body['error']['code']);
+        self::assertNotSame('', $body['request_id']);
+        self::assertStringNotContainsString('synthetic secret path', (string) $response->getContent());
+        self::assertStringNotContainsString('visitor message', (string) $response->getContent());
+        self::assertSame('no-store, private', $response->headers->get('Cache-Control'));
+    }
+
     public function testAdministratorCanDiscoverReviewAndApplyAFormCandidate(): void
     {
         [$session, $csrf] = $this->authenticateAdministrator();
@@ -320,6 +454,55 @@ final class FormConfigurationHttpTest extends KernelTestCase
         $statement->execute(['public_id' => $publicFormId]);
     }
 
+    private function createActiveSubmissionForm(): string
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $fields = json_encode([[
+            'field_key' => 'message',
+            'control_name' => 'message',
+            'control_type' => 'textarea',
+            'display_label' => 'Message',
+            'parameter_key' => 'message',
+            'ordinal' => 0,
+            'required' => true,
+            'max_length' => 10000,
+            'choices' => [],
+        ]], JSON_THROW_ON_ERROR);
+        $created = $this->request('POST', '/formvex/forms', [
+            '_token' => $csrf,
+            'display_name' => 'Contact form',
+            'page_host' => 'logoslab.xyz',
+            'page_path' => '/',
+            'form_marker' => 'contactForm',
+            'recipient' => 'owner@logoslab.xyz',
+            'subject' => 'Contact message',
+            'fields_json' => $fields,
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        $location = (string) $created->headers->get('Location');
+        preg_match('#/formvex/forms/([0-9a-f-]+)$#', $location, $matches);
+        $publicFormId = $matches[1] ?? '';
+        self::assertNotSame('', $publicFormId);
+        $published = $this->request('POST', '/formvex/forms/' . $publicFormId . '/publish', ['_token' => $csrf, 'revision' => '1'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $published->getStatusCode());
+        $this->activate($publicFormId);
+
+        return $publicFormId;
+    }
+
+    /** @return array<string, mixed> */
+    private function submissionPayload(): array
+    {
+        return [
+            'schema_version' => 1,
+            'page_path' => '/',
+            'form_marker' => 'contactForm',
+            'configuration_version' => 1,
+            'attempt_id' => '0195f2b8-7c3a-4f42-8c11-4ac3b865e092',
+            'fields' => ['message' => 'A visitor message'],
+            'field_shape' => [['control_name' => 'message', 'control_type' => 'textarea']],
+        ];
+    }
+
     /** @param array<string, mixed> $parameters @param array<string, string> $cookies @param array<string, string> $server */
     private function request(string $method, string $path, array $parameters = [], array $cookies = [], array $server = []): Response
     {
@@ -328,6 +511,35 @@ final class FormConfigurationHttpTest extends KernelTestCase
             'HTTP_HOST' => 'localhost',
             'REMOTE_ADDR' => '127.0.0.1',
         ], $server));
+        $response = self::$kernel->handle($request);
+        self::$kernel->terminate($request, $response);
+
+        return $response;
+    }
+
+    /** @param array<string, mixed> $payload @param array<string, string> $server */
+    private function jsonRequest(string $method, string $path, array $payload, array $server = []): Response
+    {
+        $request = Request::create($path, $method, [], [], [], array_merge([
+            'HTTPS' => 'on',
+            'HTTP_HOST' => 'localhost',
+            'REMOTE_ADDR' => '127.0.0.1',
+            'CONTENT_TYPE' => 'application/json',
+        ], $server), json_encode($payload, JSON_THROW_ON_ERROR));
+        $response = self::$kernel->handle($request);
+        self::$kernel->terminate($request, $response);
+
+        return $response;
+    }
+
+    /** @param array<string, string> $server */
+    private function rawRequest(string $method, string $path, string $body, array $server = []): Response
+    {
+        $request = Request::create($path, $method, [], [], [], array_merge([
+            'HTTPS' => 'on',
+            'HTTP_HOST' => 'localhost',
+            'REMOTE_ADDR' => '127.0.0.1',
+        ], $server), $body);
         $response = self::$kernel->handle($request);
         self::$kernel->terminate($request, $response);
 
