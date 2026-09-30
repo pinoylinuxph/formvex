@@ -178,6 +178,24 @@
                     </div>
                 {% endif %}
 
+                {% if activationState.targetVersion and not activationState.activationAllowed %}
+                    <div class="fv-alert" id="activation-blocked-help" role="status">
+                        <strong>Activation unavailable for version {{ activationState.targetVersion.versionNumber }}.</strong>
+                        {% if not activationState.smtpTestCurrent %}
+                            <span>SMTP blocker: run a successful SMTP test from Settings. The test must match the current SMTP settings.</span>
+                        {% endif %}
+                        {% if not activationState.endToEndCurrent %}
+                            {% if activationState.evidence.endToEndStatus.value == 'accepted' %}
+                                <span>Qualification blocker: the synthetic submission was accepted and is waiting for the delivery worker to send the email. Run the delivery worker on the server, then refresh this page.</span>
+                            {% elseif activationState.evidence.endToEndStatus.value in ['failed', 'uncertain', 'stale'] %}
+                                <span>Qualification blocker: the previous qualification is {{ activationState.evidence.endToEndStatus.value|replace({'_': ' '}) }}. Start a new browser qualification and review its delivery result.</span>
+                            {% else %}
+                                <span>Qualification blocker: start a browser qualification and submit synthetic test values through the configured website form.</span>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                {% endif %}
+
                 <div class="fv-action-bar">
                     {% if activationState.targetVersion %}
                         <form method="post" action="{{ path('spoke_admin_form_qualification_start', {publicFormId: details.draft.publicId}) }}">
@@ -188,7 +206,7 @@
                         <form method="post" action="{{ path('spoke_admin_form_activate', {publicFormId: details.draft.publicId}) }}">
                             <input type="hidden" name="_token" value="{{ csrfToken }}">
                             <input type="hidden" name="revision" value="{{ details.draft.revision }}">
-                            <button class="fv-button fv-button-primary" type="submit"{% if not activationState.activationAllowed %} disabled{% endif %}>Activate published version</button>
+                            <button class="fv-button fv-button-primary" type="submit"{% if not activationState.activationAllowed %} disabled aria-describedby="activation-blocked-help"{% endif %}>Activate published version</button>
                         </form>
                     {% elseif activationState.activeVersion %}
                         <form method="post" action="{{ path('spoke_admin_form_disable', {publicFormId: details.draft.publicId}) }}">

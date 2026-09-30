@@ -260,12 +260,15 @@ final class FormConfigurationHttpTest extends KernelTestCase
         $activation = $this->request('POST', '/formvex/forms/' . $publicFormId . '/activate', ['_token' => $csrf, 'revision' => '2'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
         self::assertSame(Response::HTTP_OK, $activation->getStatusCode());
         self::assertStringContainsString('Run a successful SMTP test from Settings before activating this form.', (string) $activation->getContent());
+        self::assertStringContainsString('Activation unavailable for version 1.', (string) $activation->getContent());
+        self::assertStringContainsString('the synthetic submission was accepted and is waiting for the delivery worker', (string) $activation->getContent());
 
         $connection->exec("UPDATE delivery_jobs SET state = 'sent', last_outcome = 'accepted'");
         $connection->exec("UPDATE smtp_test_state SET status = 'passed', tested_revision = 1, summary = 'Synthetic SMTP acceptance'");
         $ready = $this->request('GET', '/formvex/forms/' . $publicFormId, [], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
         self::assertSame(Response::HTTP_OK, $ready->getStatusCode());
         self::assertStringContainsString('You can activate this version.', (string) $ready->getContent());
+        self::assertStringNotContainsString('Activation unavailable for version 1.', (string) $ready->getContent());
 
         $activated = $this->request('POST', '/formvex/forms/' . $publicFormId . '/activate', ['_token' => $csrf, 'revision' => '2'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
         self::assertSame(Response::HTTP_OK, $activated->getStatusCode());
