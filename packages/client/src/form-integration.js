@@ -81,6 +81,46 @@ export async function initializeFormIntegration({
   return attached;
 }
 
+export function initializeQualificationIntegration({
+  documentRef = globalThis.document,
+  windowRef = globalThis.window,
+  fetchImpl = windowRef?.fetch?.bind(windowRef) || globalThis.fetch,
+  storageRef = sessionStorageFor(windowRef),
+  cryptoRef = windowRef?.crypto || globalThis.crypto,
+  resolution,
+  qualificationToken,
+} = {}) {
+  if (
+    !documentRef ||
+    typeof fetchImpl !== 'function' ||
+    !isResolutionPayload(resolution, resolution?.form_marker) ||
+    typeof qualificationToken !== 'string' ||
+    qualificationToken === ''
+  ) {
+    return [];
+  }
+
+  const candidate = findFormCandidates(documentRef).find(
+    ({ marker }) => marker === resolution.form_marker,
+  );
+
+  if (!candidate) {
+    return [];
+  }
+
+  attachForm(candidate.form, resolution, {
+    documentRef,
+    windowRef,
+    fetchImpl,
+    storageRef,
+    cryptoRef,
+    pagePath: windowRef?.location?.pathname || '/',
+    qualificationToken,
+  });
+
+  return [candidate.form];
+}
+
 export async function resolveForm({ marker, locationRef, fetchImpl }) {
   if (
     typeof fetchImpl !== 'function' ||
@@ -247,7 +287,7 @@ export function mapSubmissionResponse(status, payload) {
 function attachForm(
   form,
   resolution,
-  { documentRef, windowRef, fetchImpl, storageRef, cryptoRef, pagePath },
+  { documentRef, windowRef, fetchImpl, storageRef, cryptoRef, pagePath, qualificationToken = null },
 ) {
   let state = 'ready';
   let attemptId = null;
@@ -321,6 +361,7 @@ function attachForm(
 
     void submitEnvelope(resolution, envelope, {
       fetchImpl,
+      qualificationToken,
     }).then((result) => {
       state = result.state;
 
@@ -351,10 +392,13 @@ function attachForm(
   form.addEventListener('invalid', invalid, true);
 }
 
-async function submitEnvelope(resolution, envelope, { fetchImpl }) {
+async function submitEnvelope(resolution, envelope, { fetchImpl, qualificationToken = null }) {
   try {
+    const qualification = typeof qualificationToken === 'string' && qualificationToken !== '';
     const response = await fetchImpl(
-      `/formvex/api/v1/forms/${encodeURIComponent(resolution.public_form_id)}/submissions`,
+      qualification
+        ? '/formvex/api/v1/qualification/submissions'
+        : `/formvex/api/v1/forms/${encodeURIComponent(resolution.public_form_id)}/submissions`,
       {
         method: 'POST',
         headers: {
@@ -362,7 +406,9 @@ async function submitEnvelope(resolution, envelope, { fetchImpl }) {
           'Content-Type': 'application/json',
         },
         credentials: 'omit',
-        body: JSON.stringify(envelope),
+        body: JSON.stringify(
+          qualification ? { ...envelope, qualification_token: qualificationToken } : envelope,
+        ),
       },
     );
     const payload = await response.json();
@@ -786,5 +832,9 @@ function sessionStorageFor(windowRef) {
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-  void initializeFormIntegration();
+  const fragment = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+
+  if (!fragment.has('formvex_qualification')) {
+    void initializeFormIntegration();
+  }
 }

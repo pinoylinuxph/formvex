@@ -38,5 +38,11 @@ interface FormConfigurationStore
 
     public function findActive(PrivateStoragePaths $paths, string $publicId): ?FormConfigurationRecord;
 
+    public function findPublished(PrivateStoragePaths $paths, string $publicId, int $versionNumber): ?FormConfigurationRecord;
+
+    public function activatePublished(PrivateStoragePaths $paths, string $publicId, int $versionNumber, DateTimeImmutable $now): FormConfigurationRecord;
+
+    public function disableActive(PrivateStoragePaths $paths, string $publicId, DateTimeImmutable $now): void;
+
     public function recordAudit(PrivateStoragePaths $paths, string $eventName, string $outcome, DateTimeImmutable $occurredAt): void;
 }

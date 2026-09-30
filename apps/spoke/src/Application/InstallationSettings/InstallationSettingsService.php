@@ -82,6 +82,7 @@ final readonly class InstallationSettingsService
         $smtpPort = $this->port($input);
         $smtpUsername = $this->text($input, 'smtp_username', 'SMTP username', 254);
         $smtpTimeout = $this->timeout($input);
+        $smtpAttemptsPerMinute = $this->smtpAttemptsPerMinute($input, $current->smtpAttemptsPerMinute);
         $secretSlot = $current->smtpSecretSlot;
 
         if ($password !== '') {
@@ -100,7 +101,7 @@ final readonly class InstallationSettingsService
             $smtpUsername,
             $smtpTimeout,
             $secretSlot,
-        );
+        )->withSmtpPacing($smtpAttemptsPerMinute);
 
         try {
             $now = $this->clock->now();
@@ -309,6 +310,22 @@ final readonly class InstallationSettingsService
 
         if ($value < 3 || $value > 60) {
             throw new InstallationSettingsFailure('smtp_timeout_invalid', 'The SMTP connection timeout must be between 3 and 60 seconds.', ['smtp_timeout_seconds' => 'Enter a timeout from 3 to 60 seconds.']);
+        }
+
+        return $value;
+    }
+
+    /** @param array<string, string> $input */
+    private function smtpAttemptsPerMinute(array $input, int $default): int
+    {
+        if (!array_key_exists('smtp_attempts_per_minute', $input)) {
+            return $default;
+        }
+
+        $value = $this->integer($input, 'smtp_attempts_per_minute', 'SMTP attempt limit');
+
+        if ($value < 1 || $value > 60) {
+            throw new InstallationSettingsFailure('smtp_pacing_invalid', 'The SMTP attempt limit must be between 1 and 60 attempts per minute.', ['smtp_attempts_per_minute' => 'Enter a value from 1 to 60 attempts per minute.']);
         }
 
         return $value;

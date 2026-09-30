@@ -7,6 +7,14 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Core\Delivery\DeliveryMessageComposer:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Core\Delivery\DeliveryRetryPolicy:
+        autowire: true
+        autoconfigure: true
+
     Formvex\Spoke\Domain\Submission\Contract\SubmissionStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoSubmissionStore
 
@@ -43,6 +51,26 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Spoke\Migrations\Version000008CreateEmailDeliveryWorker:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000009CreateFormActivation:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Domain\Delivery\Contract\DeliveryJobRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryJobRepository
+
+    Formvex\Spoke\Domain\Delivery\Contract\DeliveryPacingStore:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryPacingStore
+
+    Formvex\Spoke\Domain\Delivery\Contract\OperationalAlertRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoOperationalAlertRepository
+
+    Formvex\Spoke\Domain\Delivery\Contract\MailTransport:
+        alias: Formvex\Spoke\Infrastructure\Mail\SymfonySmtpDeliveryTransport
+
     Formvex\Spoke\Domain\Abuse\Contract\AbuseSettingsStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoAbuseStore
 
@@ -57,6 +85,9 @@ services:
 
     Formvex\Spoke\Domain\Abuse\Contract\CaptchaVerifier:
         alias: Formvex\Spoke\Infrastructure\Captcha\CurlTurnstileVerifier
+
+    Formvex\Spoke\Domain\FormActivation\Contract\FormActivationStore:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoFormActivationStore
 
     Formvex\Spoke\Infrastructure\Captcha\TurnstileHttpClient:
         alias: Formvex\Spoke\Infrastructure\Captcha\CurlTurnstileHttpClient

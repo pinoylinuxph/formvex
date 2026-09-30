@@ -78,6 +78,7 @@ final class SettingsController extends AbstractController
             'smtp_username',
             'smtp_password',
             'smtp_timeout_seconds',
+            'smtp_attempts_per_minute',
         ]);
     }
 
@@ -302,6 +303,7 @@ final class SettingsController extends AbstractController
             'smtp_username' => $settings->smtpUsername,
             'smtp_password' => '',
             'smtp_timeout_seconds' => (string) $settings->smtpTimeoutSeconds,
+            'smtp_attempts_per_minute' => (string) $settings->smtpAttemptsPerMinute,
             'maximum_failures' => (string) $settings->loginThrottle->maximumFailures,
             'window_minutes' => (string) $settings->loginThrottle->windowMinutes,
             'cooldown_minutes' => (string) $settings->loginThrottle->cooldownMinutes,

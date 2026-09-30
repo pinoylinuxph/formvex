@@ -374,6 +374,107 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
         return $row === null ? null : $this->hydrateRecord($connection, $row);
     }
 
+    public function findPublished(PrivateStoragePaths $paths, string $publicId, int $versionNumber): ?FormConfigurationRecord
+    {
+        $connection = $this->connection($paths);
+        $statement = $connection->prepare(
+            "SELECT v.*, f.public_id, f.display_name, p.host, p.path, p.form_marker
+             FROM form_configuration_versions v
+             INNER JOIN form_configurations f ON f.id = v.form_id
+             INNER JOIN form_configuration_version_pages p ON p.version_id = v.id
+             WHERE f.public_id = :public_id AND f.deleted_at IS NULL AND v.version_number = :version_number AND v.state = 'published'
+             LIMIT 1",
+        );
+        $statement->execute(['public_id' => $publicId, 'version_number' => $versionNumber]);
+        $row = $this->fetchRow($statement);
+
+        return $row === null ? null : $this->hydrateRecord($connection, $row);
+    }
+
+    public function activatePublished(PrivateStoragePaths $paths, string $publicId, int $versionNumber, DateTimeImmutable $now): FormConfigurationRecord
+    {
+        $connection = $this->connection($paths);
+        $versionId = 0;
+
+        try {
+            $connection->exec('BEGIN IMMEDIATE TRANSACTION');
+            $form = $this->formRow($connection, $publicId, false);
+
+            if ($form === null) {
+                throw new FormConfigurationFailure('form_not_found', 'Formvex could not find the form to activate.');
+            }
+
+            $targetStatement = $connection->prepare(
+                "SELECT id FROM form_configuration_versions WHERE form_id = :form_id AND version_number = :version_number AND state = 'published' LIMIT 1",
+            );
+            $targetStatement->execute([
+                'form_id' => $this->integerValue($form, 'id'),
+                'version_number' => $versionNumber,
+            ]);
+            $target = $targetStatement->fetchColumn();
+
+            if ((!is_int($target) && !is_string($target)) || (is_string($target) && !ctype_digit($target)) || (int) $target < 1) {
+                throw new FormConfigurationFailure('published_version_unavailable', 'The selected published version is no longer available. Reload the form and qualify the current version again.');
+            }
+
+            $versionId = (int) $target;
+            $timestamp = $this->formatTimestamp($now);
+            $disable = $connection->prepare("UPDATE form_configuration_versions SET state = 'disabled', updated_at = :updated_at WHERE form_id = :form_id AND state = 'active'");
+            $disable->execute([
+                'updated_at' => $timestamp,
+                'form_id' => $this->integerValue($form, 'id'),
+            ]);
+            $activate = $connection->prepare("UPDATE form_configuration_versions SET state = 'active', updated_at = :updated_at WHERE id = :id AND state = 'published'");
+            $activate->execute(['updated_at' => $timestamp, 'id' => $versionId]);
+
+            if ($activate->rowCount() !== 1) {
+                throw new FormConfigurationFailure('activation_conflict', 'The form changed before activation completed. Reload the form and qualify the current published version again.');
+            }
+
+            $formUpdate = $connection->prepare('UPDATE form_configurations SET updated_at = :updated_at WHERE id = :id');
+            $formUpdate->execute(['updated_at' => $timestamp, 'id' => $this->integerValue($form, 'id')]);
+            $connection->commit();
+        } catch (FormConfigurationFailure $failure) {
+            $this->rollback($connection);
+            throw $failure;
+        } catch (Throwable) {
+            $this->rollback($connection);
+            throw new FormConfigurationFailure('activation_failed', 'Formvex could not activate the published form. The previous active state remains in place.');
+        }
+
+        return $this->recordByVersionId($connection, $versionId);
+    }
+
+    public function disableActive(PrivateStoragePaths $paths, string $publicId, DateTimeImmutable $now): void
+    {
+        $connection = $this->connection($paths);
+
+        try {
+            $connection->beginTransaction();
+            $form = $this->formRow($connection, $publicId, false);
+
+            if ($form === null) {
+                throw new FormConfigurationFailure('form_not_found', 'Formvex could not find the form to disable.');
+            }
+
+            $timestamp = $this->formatTimestamp($now);
+            $disable = $connection->prepare("UPDATE form_configuration_versions SET state = 'disabled', updated_at = :updated_at WHERE form_id = :form_id AND state = 'active'");
+            $disable->execute([
+                'updated_at' => $timestamp,
+                'form_id' => $this->integerValue($form, 'id'),
+            ]);
+            $formUpdate = $connection->prepare('UPDATE form_configurations SET updated_at = :updated_at WHERE id = :id');
+            $formUpdate->execute(['updated_at' => $timestamp, 'id' => $this->integerValue($form, 'id')]);
+            $connection->commit();
+        } catch (FormConfigurationFailure $failure) {
+            $this->rollback($connection);
+            throw $failure;
+        } catch (Throwable) {
+            $this->rollback($connection);
+            throw new FormConfigurationFailure('disable_failed', 'Formvex could not disable the form. Its previous state remains in place.');
+        }
+    }
+
     public function recordAudit(PrivateStoragePaths $paths, string $eventName, string $outcome, DateTimeImmutable $occurredAt): void
     {
         $connection = $this->connection($paths);
@@ -630,6 +731,7 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
             $row['published_at'] === null ? null : $this->timestamp($this->stringValue($row, 'published_at')),
             $this->integerValue($row, 'captcha_enabled') === 1,
             $this->stringValue($row, 'captcha_site_key'),
+            $this->integerValue($row, 'id'),
         );
     }
 

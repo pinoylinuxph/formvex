@@ -7,6 +7,7 @@ namespace Formvex\Spoke\Infrastructure\Persistence;
 use DateTimeImmutable;
 use DateTimeZone;
 use Formvex\Contracts\V1\Submission\SubmissionRequest;
+use Formvex\Core\Delivery\DeliveryMessageSnapshot;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationRecord;
 use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
 use Formvex\Spoke\Domain\Submission\Contract\SubmissionStore;
@@ -49,6 +50,8 @@ final class PdoSubmissionStore implements SubmissionStore
         string $submissionId,
         string $receiptId,
         string $jobId,
+        DeliveryMessageSnapshot $deliverySnapshot,
+        ?string $qualificationId = null,
     ): SubmissionAccepted {
         $connection = $this->connection($paths);
 
@@ -57,7 +60,7 @@ final class PdoSubmissionStore implements SubmissionStore
             // transaction can deadlock when two writers both read "no attempt" and then
             // upgrade to a write transaction at the same time.
             $connection->exec('BEGIN IMMEDIATE TRANSACTION');
-            $active = $this->activeIdentity($connection, $configuration->publicId);
+            $active = $this->configurationIdentity($connection, $configuration->publicId, $configuration->versionNumber, $qualificationId !== null);
 
             if ($active === null) {
                 throw new SubmissionFailure('configuration_stale', 'This form configuration is no longer active. Refresh the page and try again.');
@@ -79,12 +82,7 @@ final class PdoSubmissionStore implements SubmissionStore
             $timestamp = $this->formatTimestamp($now);
             $expiresAt = $now->modify('+24 hours');
             $fieldsJson = json_encode($validatedFields, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-            $submission = $connection->prepare(
-                'INSERT INTO submissions '
-                . '(public_id, form_id, configuration_version_id, configuration_version, page_path, form_marker, recipient, subject, fields_json, classification, created_at, updated_at) '
-                . 'VALUES (:public_id, :form_id, :configuration_version_id, :configuration_version, :page_path, :form_marker, :recipient, :subject, :fields_json, :classification, :created_at, :updated_at)',
-            );
-            $submission->execute([
+            $parameters = [
                 'public_id' => $submissionId,
                 'form_id' => $this->integer($active, 'form_id'),
                 'configuration_version_id' => $this->integer($active, 'version_id'),
@@ -97,7 +95,22 @@ final class PdoSubmissionStore implements SubmissionStore
                 'classification' => $classification->value,
                 'created_at' => $timestamp,
                 'updated_at' => $timestamp,
-            ]);
+            ];
+            if ($qualificationId !== null && $this->hasColumn($connection, 'submissions', 'qualification_id')) {
+                $submission = $connection->prepare(
+                    'INSERT INTO submissions '
+                    . '(public_id, form_id, configuration_version_id, configuration_version, page_path, form_marker, recipient, subject, fields_json, classification, qualification_id, is_qualification_test, created_at, updated_at) '
+                    . 'VALUES (:public_id, :form_id, :configuration_version_id, :configuration_version, :page_path, :form_marker, :recipient, :subject, :fields_json, :classification, :qualification_id, 1, :created_at, :updated_at)',
+                );
+                $parameters['qualification_id'] = $qualificationId;
+            } else {
+                $submission = $connection->prepare(
+                    'INSERT INTO submissions '
+                    . '(public_id, form_id, configuration_version_id, configuration_version, page_path, form_marker, recipient, subject, fields_json, classification, created_at, updated_at) '
+                    . 'VALUES (:public_id, :form_id, :configuration_version_id, :configuration_version, :page_path, :form_marker, :recipient, :subject, :fields_json, :classification, :created_at, :updated_at)',
+                );
+            }
+            $submission->execute($parameters);
             $submissionRowId = $this->lastInsertId($connection);
 
             $attempt = $connection->prepare(
@@ -115,21 +128,32 @@ final class PdoSubmissionStore implements SubmissionStore
                 'expires_at' => $this->formatTimestamp($expiresAt),
             ]);
 
-            $job = $connection->prepare(
-                'INSERT INTO delivery_jobs '
-                . '(job_id, submission_id, state, attempt_count, due_at, created_at, updated_at) '
-                . "VALUES (:job_id, :submission_id, 'queued', 0, :due_at, :created_at, :updated_at)",
-            );
-            $job->execute([
+            $jobParameters = [
                 'job_id' => $jobId,
                 'submission_id' => $submissionRowId,
                 'due_at' => $timestamp,
                 'created_at' => $timestamp,
                 'updated_at' => $timestamp,
-            ]);
+            ];
+            $snapshotJson = json_encode($deliverySnapshot->toArray(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            if ($this->hasColumn($connection, 'delivery_jobs', 'snapshot_json')) {
+                $job = $connection->prepare(
+                    'INSERT INTO delivery_jobs '
+                    . '(job_id, submission_id, state, attempt_count, due_at, snapshot_json, created_at, updated_at) '
+                    . "VALUES (:job_id, :submission_id, 'queued', 0, :due_at, :snapshot_json, :created_at, :updated_at)",
+                );
+                $jobParameters['snapshot_json'] = $snapshotJson;
+            } else {
+                $job = $connection->prepare(
+                    'INSERT INTO delivery_jobs '
+                    . '(job_id, submission_id, state, attempt_count, due_at, created_at, updated_at) '
+                    . "VALUES (:job_id, :submission_id, 'queued', 0, :due_at, :created_at, :updated_at)",
+                );
+            }
+            $job->execute($jobParameters);
             $connection->commit();
 
-            return new SubmissionAccepted($receiptId);
+            return new SubmissionAccepted($receiptId, (string) $submissionRowId);
         } catch (SubmissionFailure $failure) {
             $this->rollback($connection);
             throw $failure;
@@ -153,16 +177,17 @@ final class PdoSubmissionStore implements SubmissionStore
     }
 
     /** @return array<string, mixed>|null */
-    private function activeIdentity(PDO $connection, string $publicId): ?array
+    private function configurationIdentity(PDO $connection, string $publicId, int $versionNumber, bool $qualification): ?array
     {
+        $state = $qualification ? 'published' : 'active';
         $statement = $connection->prepare(
             "SELECT f.id AS form_id, v.id AS version_id, v.version_number
              FROM form_configurations f
-             INNER JOIN form_configuration_versions v ON v.form_id = f.id AND v.state = 'active'
-             WHERE f.public_id = :public_id AND f.deleted_at IS NULL
+             INNER JOIN form_configuration_versions v ON v.form_id = f.id AND v.state = :state
+             WHERE f.public_id = :public_id AND f.deleted_at IS NULL AND v.version_number = :version_number
              LIMIT 1",
         );
-        $statement->execute(['public_id' => $publicId]);
+        $statement->execute(['public_id' => $publicId, 'state' => $state, 'version_number' => $versionNumber]);
         $row = $statement->fetch(PDO::FETCH_ASSOC);
 
         if (!is_array($row)) {
@@ -280,5 +305,13 @@ final class PdoSubmissionStore implements SubmissionStore
     private function formatTimestamp(DateTimeImmutable $timestamp): string
     {
         return $timestamp->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\\TH:i:s.u\\Z');
+    }
+
+    private function hasColumn(PDO $connection, string $table, string $column): bool
+    {
+        $statement = $connection->prepare('SELECT 1 FROM pragma_table_info(:table_name) WHERE name = :column_name LIMIT 1');
+        $statement->execute(['table_name' => $table, 'column_name' => $column]);
+
+        return $statement->fetchColumn() !== false;
     }
 }

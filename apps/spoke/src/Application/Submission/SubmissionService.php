@@ -6,6 +6,8 @@ namespace Formvex\Spoke\Application\Submission;
 
 use Formvex\Contracts\V1\Submission\SubmissionFieldShape;
 use Formvex\Contracts\V1\Submission\SubmissionRequest;
+use Formvex\Core\Delivery\DeliveryFieldSnapshot;
+use Formvex\Core\Delivery\DeliveryMessageSnapshot;
 use Formvex\Core\Submission\CanonicalSubmissionHasher;
 use Formvex\Spoke\Application\Abuse\SubmissionAbuseService;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
@@ -16,6 +18,8 @@ use Formvex\Spoke\Domain\FormConfiguration\FormFieldDefinition;
 use Formvex\Spoke\Domain\FormConfiguration\PageIdentity;
 use Formvex\Spoke\Domain\Installation\Contract\Clock;
 use Formvex\Spoke\Domain\Installation\Contract\IdentifierGenerator;
+use Formvex\Spoke\Domain\InstallationSettings\Contract\InstallationSettingsStore;
+use Formvex\Spoke\Domain\InstallationSettings\InstallationSettings;
 use Formvex\Spoke\Domain\Submission\Contract\SubmissionStore;
 use Formvex\Spoke\Domain\Submission\Exception\SubmissionFailure;
 use Formvex\Spoke\Domain\Submission\SubmissionAccepted;
@@ -31,16 +35,29 @@ final readonly class SubmissionService
         private IdentifierGenerator $identifierGenerator,
         private Clock $clock,
         private ?SubmissionAbuseService $abuseService = null,
+        private ?InstallationSettingsStore $settingsStore = null,
     ) {
     }
 
     public function accept(string $applicationRoot, string $publicFormId, SubmissionRequest $request, ?SubmissionClassification $classification = null, ?string $clientIp = null): SubmissionAccepted
     {
+        return $this->acceptInternal($applicationRoot, $publicFormId, $request, $classification, $clientIp, false, null);
+    }
+
+    public function acceptQualification(string $applicationRoot, string $publicFormId, SubmissionRequest $request, string $qualificationId, ?string $clientIp = null): SubmissionAccepted
+    {
+        return $this->acceptInternal($applicationRoot, $publicFormId, $request, null, $clientIp, true, $qualificationId);
+    }
+
+    private function acceptInternal(string $applicationRoot, string $publicFormId, SubmissionRequest $request, ?SubmissionClassification $classification, ?string $clientIp, bool $qualification, ?string $qualificationId): SubmissionAccepted
+    {
         $paths = $this->storageResolver->resolve($applicationRoot);
-        $configuration = $this->formConfigurationStore->findActive($paths, $publicFormId);
+        $configuration = $qualification
+            ? $this->formConfigurationStore->findPublished($paths, $publicFormId, $request->configurationVersion)
+            : $this->formConfigurationStore->findActive($paths, $publicFormId);
 
         if ($configuration === null) {
-            throw new SubmissionFailure('form_unavailable', 'Formvex could not find an approved active form for this request.');
+            throw new SubmissionFailure('form_unavailable', $qualification ? 'The published form version is no longer available for qualification. Start a new qualification session.' : 'Formvex could not find an approved active form for this request.');
         }
 
         $this->assertConfigurationIdentity($configuration, $request);
@@ -90,6 +107,39 @@ final readonly class SubmissionService
             $this->identifierGenerator->uuidV7($now),
             $this->identifierGenerator->uuidV7($now),
             $this->identifierGenerator->uuidV7($now),
+            $this->deliverySnapshot($paths, $configuration, $canonicalFields, $classification),
+            $qualificationId,
+        );
+    }
+
+    /** @param array<string, string|list<string>> $validatedFields */
+    private function deliverySnapshot(
+        \Formvex\Spoke\Domain\Installation\PrivateStoragePaths $paths,
+        FormConfigurationRecord $configuration,
+        array $validatedFields,
+        SubmissionClassification $classification,
+    ): DeliveryMessageSnapshot {
+        $settings = $this->settingsStore?->get($paths) ?? InstallationSettings::defaults();
+        $fields = [];
+        $replyTo = null;
+
+        foreach ($configuration->fields as $field) {
+            $value = $validatedFields[$field->controlName] ?? '';
+            $fields[] = new DeliveryFieldSnapshot($field->displayLabel, $value);
+
+            if ($replyTo === null && $field->controlType === 'email' && is_string($value) && $value !== '' && filter_var($value, FILTER_VALIDATE_EMAIL) !== false) {
+                $replyTo = $value;
+            }
+        }
+
+        return new DeliveryMessageSnapshot(
+            $settings->senderEmail,
+            $settings->senderName,
+            $configuration->recipient,
+            $configuration->subject,
+            $classification->value,
+            $fields,
+            $replyTo,
         );
     }
 

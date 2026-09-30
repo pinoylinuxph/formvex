@@ -6,6 +6,7 @@ namespace Formvex\Spoke\Domain\Submission\Contract;
 
 use DateTimeImmutable;
 use Formvex\Contracts\V1\Submission\SubmissionRequest;
+use Formvex\Core\Delivery\DeliveryMessageSnapshot;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationRecord;
 use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
 use Formvex\Spoke\Domain\Submission\SubmissionAccepted;
@@ -33,5 +34,7 @@ interface SubmissionStore
         string $submissionId,
         string $receiptId,
         string $jobId,
+        DeliveryMessageSnapshot $deliverySnapshot,
+        ?string $qualificationId = null,
     ): SubmissionAccepted;
 }

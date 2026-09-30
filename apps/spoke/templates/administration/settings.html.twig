@@ -197,6 +197,17 @@
                     help: 'The default is 10 seconds; allowed values are 3–60 seconds.',
                     error: fieldErrors.smtp_timeout_seconds|default(null),
                 } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'smtp-attempts-per-minute',
+                    name: 'smtp_attempts_per_minute',
+                    label: 'SMTP attempts per minute',
+                    type: 'number',
+                    value: formData.smtp_attempts_per_minute,
+                    min: 1,
+                    max: 60,
+                    help: 'Default: 10. This installation-wide ceiling includes retries; use a lower value when the provider limit is lower.',
+                    error: fieldErrors.smtp_attempts_per_minute|default(null),
+                } only %}
             </div>
             {% include '@platform_ui/components/form_action_bar.html.twig' with {
                 helpText: settings.testState.status.value == 'stale' ? 'SMTP settings changed. Send a new test after saving.' : 'Saving settings does not send email.',

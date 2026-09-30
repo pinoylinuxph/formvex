@@ -7,10 +7,13 @@ namespace Formvex\Spoke\Admin\Forms;
 use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
+use Formvex\Spoke\Application\FormActivation\FormActivationStatusService;
 use Formvex\Spoke\Application\FormConfiguration\FormConfigurationService;
 use Formvex\Spoke\Application\FormDiscovery\FormDiscoveryService;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Administration\SessionRecord;
+use Formvex\Spoke\Domain\FormActivation\Exception\FormActivationFailure;
+use Formvex\Spoke\Domain\FormActivation\FormActivationStatus;
 use Formvex\Spoke\Domain\FormConfiguration\Exception\FormConfigurationFailure;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationDetails;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationRecord;
@@ -36,6 +39,7 @@ final class FormConfigurationController extends AbstractController
         private readonly FormDiscoveryRequestResolver $discoveryRequestResolver,
         private readonly FormConfigurationService $formConfigurationService,
         private readonly FormDiscoveryService $formDiscoveryService,
+        private readonly FormActivationStatusService $formActivationStatusService,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
     ) {
     }
@@ -192,6 +196,7 @@ final class FormConfigurationController extends AbstractController
 
             return $this->renderPage($request, 'administration/forms/form.html.twig', [
                 'details' => $details,
+                'activation' => $this->activationStatus($publicFormId),
                 'formData' => $this->formData($details->draft),
                 'fieldsJson' => $this->fieldsJson($details->draft),
                 'fieldErrors' => [],
@@ -224,6 +229,7 @@ final class FormConfigurationController extends AbstractController
 
             return $this->renderPage($request, 'administration/forms/form.html.twig', [
                 'details' => $details,
+                'activation' => $this->activationStatus($publicFormId),
                 'formData' => $this->formData($details->draft),
                 'fieldsJson' => $this->fieldsJson($details->draft),
                 'fieldErrors' => [],
@@ -253,10 +259,11 @@ final class FormConfigurationController extends AbstractController
 
             return $this->renderPage($request, 'administration/forms/form.html.twig', [
                 'details' => $details,
+                'activation' => $this->activationStatus($publicFormId),
                 'formData' => $this->formData($details->draft),
                 'fieldsJson' => $this->fieldsJson($details->draft),
                 'fieldErrors' => [],
-                'message' => 'Configuration version ' . $published->versionNumber . ' was published. Unit 12 must activate it before public resolution can match it.',
+                'message' => 'Configuration version ' . $published->versionNumber . ' was published. Complete qualification and activate it before public resolution can match it.',
                 'messageVariant' => 'success',
                 'isNew' => false,
             ]);
@@ -629,6 +636,15 @@ final class FormConfigurationController extends AbstractController
         return $response;
     }
 
+    private function activationStatus(string $publicFormId): ?FormActivationStatus
+    {
+        try {
+            return $this->formActivationStatusService->status($this->runtimeConfiguration->applicationRoot, $publicFormId);
+        } catch (FormActivationFailure|FormConfigurationFailure) {
+            return null;
+        }
+    }
+
     /** @param array<string, string> $fieldErrors */
     private function renderFormFailure(Request $request, ?string $publicFormId, string $message, string $variant, array $fieldErrors = []): Response
     {
@@ -660,11 +676,14 @@ final class FormConfigurationController extends AbstractController
 
         return $this->renderPage($request, 'administration/forms/form.html.twig', [
             'details' => $details,
+            'activation' => $publicFormId === null ? null : $this->activationStatus($publicFormId),
             'formData' => $formData,
             'fieldsJson' => $fieldsJson,
             'fieldErrors' => $fieldErrors,
             'message' => $message,
             'messageVariant' => $variant,
+            'qualificationUrl' => null,
+            'qualificationExpiresAt' => null,
             'isNew' => $publicFormId === null,
         ], Response::HTTP_UNPROCESSABLE_ENTITY);
     }

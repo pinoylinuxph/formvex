@@ -24,9 +24,14 @@ final readonly class InstallationSettings
         public int $smtpConfigurationRevision,
         public string $smtpSecretSlot,
         public int $discoveryPayloadLimitBytes = 131072,
+        public int $smtpAttemptsPerMinute = 10,
     ) {
         if ($this->discoveryPayloadLimitBytes < 131072 || $this->discoveryPayloadLimitBytes > 1048576) {
             throw new InstallationSettingsFailure('discovery_payload_limit_invalid', 'The discovery payload limit must be between 128 KiB and 1,024 KiB.');
+        }
+
+        if ($this->smtpAttemptsPerMinute < 1 || $this->smtpAttemptsPerMinute > 60) {
+            throw new InstallationSettingsFailure('smtp_pacing_invalid', 'The SMTP attempt limit must be between 1 and 60 attempts per minute.');
         }
     }
 
@@ -47,6 +52,8 @@ final readonly class InstallationSettings
             new LoginThrottleSettings(),
             1,
             'a',
+            131072,
+            10,
         );
     }
 
@@ -72,6 +79,7 @@ final readonly class InstallationSettings
             $this->smtpConfigurationRevision,
             $this->smtpSecretSlot,
             $this->discoveryPayloadLimitBytes,
+            $this->smtpAttemptsPerMinute,
         );
     }
 
@@ -101,6 +109,7 @@ final readonly class InstallationSettings
             $this->smtpConfigurationRevision + 1,
             $smtpSecretSlot,
             $this->discoveryPayloadLimitBytes,
+            $this->smtpAttemptsPerMinute,
         );
     }
 
@@ -122,6 +131,7 @@ final readonly class InstallationSettings
             $this->smtpConfigurationRevision,
             $this->smtpSecretSlot,
             $this->discoveryPayloadLimitBytes,
+            $this->smtpAttemptsPerMinute,
         );
     }
 
@@ -143,6 +153,29 @@ final readonly class InstallationSettings
             $this->smtpConfigurationRevision,
             $this->smtpSecretSlot,
             $bytes,
+            $this->smtpAttemptsPerMinute,
+        );
+    }
+
+    public function withSmtpPacing(int $attemptsPerMinute): self
+    {
+        return new self(
+            $this->websiteDisplayName,
+            $this->bareDomain,
+            $this->wwwAlias,
+            $this->operationalAlertEmail,
+            $this->senderEmail,
+            $this->senderName,
+            $this->smtpHost,
+            $this->smtpPort,
+            $this->smtpEncryption,
+            $this->smtpUsername,
+            $this->smtpTimeoutSeconds,
+            $this->loginThrottle,
+            $this->smtpConfigurationRevision,
+            $this->smtpSecretSlot,
+            $this->discoveryPayloadLimitBytes,
+            $attemptsPerMinute,
         );
     }
 }

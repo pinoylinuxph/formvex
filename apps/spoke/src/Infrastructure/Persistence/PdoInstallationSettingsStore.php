@@ -51,6 +51,7 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 $this->integerValue($row, 'smtp_configuration_revision'),
                 $this->stringValue($row, 'smtp_secret_slot'),
                 $this->integerValue($row, 'discovery_payload_limit_bytes'),
+                $this->integerValue($row, 'smtp_attempts_per_minute', 10),
             );
         } catch (InstallationSettingsFailure $failure) {
             throw $failure;
@@ -65,8 +66,8 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
 
         try {
             $connection->beginTransaction();
-            $statement = $connection->prepare(
-                'UPDATE installation_settings SET website_display_name = :website_display_name, '
+            $pacingColumn = $this->hasColumn($connection, 'installation_settings', 'smtp_attempts_per_minute');
+            $sql = 'UPDATE installation_settings SET website_display_name = :website_display_name, '
                 . 'bare_domain = :bare_domain, www_alias = :www_alias, '
                 . 'operational_alert_email = :operational_alert_email, sender_email = :sender_email, '
                 . 'sender_name = :sender_name, smtp_host = :smtp_host, smtp_port = :smtp_port, '
@@ -74,10 +75,9 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 . 'smtp_timeout_seconds = :smtp_timeout_seconds, maximum_login_failures = :maximum_login_failures, '
                 . 'login_window_minutes = :login_window_minutes, login_cooldown_minutes = :login_cooldown_minutes, '
                 . 'smtp_configuration_revision = :smtp_configuration_revision, smtp_secret_slot = :smtp_secret_slot, '
-                . 'discovery_payload_limit_bytes = :discovery_payload_limit_bytes, '
-                . 'updated_at = :updated_at WHERE singleton_id = 1',
-            );
-            $statement->execute([
+                . 'discovery_payload_limit_bytes = :discovery_payload_limit_bytes' . ($pacingColumn ? ', smtp_attempts_per_minute = :smtp_attempts_per_minute' : '') . ', '
+                . 'updated_at = :updated_at WHERE singleton_id = 1';
+            $parameters = [
                 'website_display_name' => $settings->websiteDisplayName,
                 'bare_domain' => $settings->bareDomain,
                 'www_alias' => $settings->wwwAlias,
@@ -96,7 +96,12 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 'smtp_secret_slot' => $settings->smtpSecretSlot,
                 'discovery_payload_limit_bytes' => $settings->discoveryPayloadLimitBytes,
                 'updated_at' => $this->formatTimestamp($now),
-            ]);
+            ];
+            if ($pacingColumn) {
+                $parameters['smtp_attempts_per_minute'] = $settings->smtpAttemptsPerMinute;
+            }
+            $statement = $connection->prepare($sql);
+            $statement->execute($parameters);
 
             if ($statement->rowCount() !== 1) {
                 throw new InstallationSettingsFailure('settings_save_failed', 'Formvex could not save the installation settings. The previous settings remain active.');
@@ -220,9 +225,17 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
     }
 
     /** @param array<mixed, mixed> $row */
-    private function integerValue(array $row, string $key): int
+    private function integerValue(array $row, string $key, ?int $default = null): int
     {
-        if (!isset($row[$key]) || (!is_int($row[$key]) && !is_string($row[$key]) && !is_float($row[$key]))) {
+        if (!array_key_exists($key, $row)) {
+            if ($default !== null) {
+                return $default;
+            }
+
+            throw new InstallationSettingsFailure('settings_state_invalid', 'Formvex found an invalid numeric value in the saved installation settings.');
+        }
+
+        if ((!is_int($row[$key]) && !is_string($row[$key]) && !is_float($row[$key]))) {
             throw new InstallationSettingsFailure('settings_state_invalid', 'Formvex found an invalid numeric value in the saved installation settings.');
         }
 
@@ -253,5 +266,13 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
         if ($connection->inTransaction()) {
             $connection->rollBack();
         }
+    }
+
+    private function hasColumn(PDO $connection, string $table, string $column): bool
+    {
+        $statement = $connection->prepare('SELECT 1 FROM pragma_table_info(:table_name) WHERE name = :column_name LIMIT 1');
+        $statement->execute(['table_name' => $table, 'column_name' => $column]);
+
+        return $statement->fetchColumn() !== false;
     }
 }

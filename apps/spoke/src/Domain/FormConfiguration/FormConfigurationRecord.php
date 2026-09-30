@@ -25,6 +25,7 @@ final readonly class FormConfigurationRecord
         public ?DateTimeImmutable $publishedAt,
         public bool $captchaEnabled = false,
         public string $captchaSiteKey = '',
+        public int $versionId = 0,
     ) {
     }
 }

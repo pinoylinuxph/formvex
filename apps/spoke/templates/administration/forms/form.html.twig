@@ -31,13 +31,13 @@
             <header class="fv-section-heading">
                 <p class="fv-eyebrow">Stable identity</p>
                 <h2 id="form-identity-heading">Page and form marker</h2>
-                <p>Use the configured website alias, the canonical page path, and the existing HTML form id. A Formvex marker is used only when the form has no reliable id.</p>
+                <p>Use the configured website alias, the canonical page path, and the existing HTML form id. A generated marker is used only when the form has no reliable id.</p>
             </header>
             <div class="fv-settings-grid">
                 {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-display-name', name: 'display_name', label: 'Form name', value: formData.display_name, help: 'An administrator-facing name; it is not sent to visitors.', error: fieldErrors.display_name|default(null)} only %}
                 {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-page-host', name: 'page_host', label: 'Website host', value: formData.page_host, help: 'Use the exact bare or www alias saved in Settings.', error: fieldErrors.page_host|default(null)} only %}
                 {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-page-path', name: 'page_path', label: 'Page path', value: formData.page_path, help: 'Example: /contact. Query strings and fragments are ignored.', error: fieldErrors.page_path|default(null)} only %}
-                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-marker', name: 'form_marker', label: 'HTML form id or Formvex marker', value: formData.form_marker, help: 'This marker must identify exactly one form on the configured page.', error: fieldErrors.form_marker|default(null)} only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {id: 'form-marker', name: 'form_marker', label: 'HTML form id or generated marker', value: formData.form_marker, help: 'This marker must identify exactly one form on the configured page.', error: fieldErrors.form_marker|default(null)} only %}
             </div>
         </section>
 
@@ -57,7 +57,7 @@
             <header class="fv-section-heading">
                 <p class="fv-eyebrow">Optional visitor protection</p>
                 <h2 id="form-captcha-heading">Cloudflare Turnstile CAPTCHA</h2>
-                <p>When enabled, the Formvex browser client renders the challenge automatically. Configure the private Turnstile secret in Settings before publishing this form.</p>
+                <p>When enabled, the installed browser client renders the challenge automatically. Configure the private Turnstile secret in Settings before publishing this form.</p>
             </header>
             <div class="fv-settings-grid">
                 <div class="fv-field">
@@ -76,12 +76,12 @@
             <header class="fv-section-heading">
                 <p class="fv-eyebrow">Mapping contract</p>
                 <h2 id="fields-heading">Field definitions</h2>
-                <p>Unit 07 populates this structure through authorized discovery. It is shown here as a read-only review of the saved draft; change mappings through the discovery review controls.</p>
+                <p>These field definitions are read-only on this page. To change mappings, labels, requiredness, length limits, or choices, run the website discovery workflow and review each detected control.</p>
             </header>
             <div class="fv-field">
                 <label for="fields-json">Saved field definitions JSON (read-only)</label>
                 <textarea class="fv-input" id="fields-json" name="fields_json" rows="14" spellcheck="false" readonly aria-readonly="true">{{ fieldsJson }}</textarea>
-                <p class="fv-field-help">This is a read-only representation of the saved draft. Use authorized discovery to change field mappings, labels, requiredness, lengths, or choices.</p>
+                <p class="fv-field-help">To change this information, use the discovery workflow from the installed website script. The detected controls will be shown for your review before the changes are saved.</p>
                 {% if fieldErrors.fields_json|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.fields_json }}</p>{% endif %}
             </div>
         </section>
@@ -96,7 +96,7 @@
             <header class="fv-section-heading">
                 <p class="fv-eyebrow">Authorized browser discovery</p>
                 <h2 id="discovery-start-heading">Detect fields from the installed website script</h2>
-                <p>Formvex will inspect this page's form structure in the browser. It will not collect visitor-entered values, change the existing form design, or publish a configuration automatically.</p>
+                <p>The installed browser client will inspect this page's form structure. It will not collect visitor-entered values, change the existing form design, or publish a configuration automatically.</p>
             </header>
             <form class="fv-form" method="post" action="{{ isNew ? path('spoke_admin_form_discovery_new_start') : path('spoke_admin_form_discovery_start', {publicFormId: details.draft.publicId}) }}">
                 <input type="hidden" name="_token" value="{{ csrfToken }}">
@@ -136,6 +136,70 @@
                 <button class="fv-button fv-button-primary" type="submit">Publish immutable version</button>
             </form>
         </section>
+
+        {% set activationState = activation|default(null) %}
+        {% if not details.trashed and activationState %}
+            <section class="fv-panel fv-settings-panel" aria-labelledby="activation-heading">
+                <header class="fv-section-heading">
+                    <p class="fv-eyebrow">Controlled release</p>
+                    <h2 id="activation-heading">Qualification and activation</h2>
+                    <p>A published version stays private until the configured SMTP connection and a browser qualification both succeed. Qualification uses synthetic values and the existing website form controls.</p>
+                </header>
+
+                <div class="fv-table-wrap">
+                    <table class="fv-table">
+                        <caption class="sr-only">Activation readiness</caption>
+                        <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Next action</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <th scope="row">Published version</th>
+                                <td>{% if activationState.targetVersion %}v{{ activationState.targetVersion.versionNumber }} ready for qualification{% elseif activationState.activeVersion %}v{{ activationState.activeVersion.versionNumber }} active{% else %}No published version{% endif %}</td>
+                                <td>{% if activationState.targetVersion %}Run the browser qualification below.{% else %}Publish a new version to prepare another activation.{% endif %}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">SMTP configuration test</th>
+                                <td>{{ activationState.smtpTestCurrent ? 'Passed for the current SMTP settings' : 'Not passed for the current SMTP settings' }}</td>
+                                <td>{% if not activationState.smtpTestCurrent %}<a href="{{ path('spoke_admin_settings') }}">Open Settings and send a test email.</a>{% else %}No action required.{% endif %}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Browser qualification</th>
+                                <td>{{ activationState.evidence.endToEndStatus.value|replace({'_': ' '})|capitalize }}</td>
+                                <td>{% if activationState.endToEndCurrent %}The synthetic message was accepted by SMTP. You can activate this version.{% elseif activationState.evidence.endToEndStatus.value == 'accepted' %}The synthetic submission was saved. Run the delivery worker, then refresh this page.{% elseif activationState.evidence.endToEndStatus.value in ['failed', 'uncertain', 'stale'] %}Start a new qualification and review the delivery result.{% else %}Start a browser qualification and submit synthetic test values.{% endif %}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                {% if qualificationUrl|default(null) %}
+                    <div class="fv-alert fv-alert-info" role="status">
+                        <strong>Qualification link ready.</strong>
+                        <span>Open this one-time link before {{ qualificationExpiresAt|date('Y-m-d H:i:s T') }}. It is valid only for the configured HTTPS page and form.</span>
+                        <a href="{{ qualificationUrl }}" target="_blank" rel="noopener">Open qualification page</a>
+                    </div>
+                {% endif %}
+
+                <div class="fv-action-bar">
+                    {% if activationState.targetVersion %}
+                        <form method="post" action="{{ path('spoke_admin_form_qualification_start', {publicFormId: details.draft.publicId}) }}">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}">
+                            <input type="hidden" name="revision" value="{{ details.draft.revision }}">
+                            <button class="fv-button fv-button-secondary" type="submit">Start browser qualification</button>
+                        </form>
+                        <form method="post" action="{{ path('spoke_admin_form_activate', {publicFormId: details.draft.publicId}) }}">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}">
+                            <input type="hidden" name="revision" value="{{ details.draft.revision }}">
+                            <button class="fv-button fv-button-primary" type="submit"{% if not activationState.activationAllowed %} disabled{% endif %}>Activate published version</button>
+                        </form>
+                    {% elseif activationState.activeVersion %}
+                        <form method="post" action="{{ path('spoke_admin_form_disable', {publicFormId: details.draft.publicId}) }}">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}">
+                            <input type="hidden" name="revision" value="{{ details.draft.revision }}">
+                            <button class="fv-button fv-button-danger" type="submit">Disable form intake</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </section>
+        {% endif %}
 
         <section class="fv-panel fv-settings-panel" aria-labelledby="lifecycle-heading">
             <header class="fv-section-heading"><p class="fv-eyebrow">Lifecycle</p><h2 id="lifecycle-heading">Trash</h2><p>Move this form to Trash before restoration or permanent deletion. Trash does not expire automatically.</p></header>

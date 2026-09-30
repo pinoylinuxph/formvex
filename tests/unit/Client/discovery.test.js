@@ -5,6 +5,7 @@ import {
   discoverParameterSuggestions,
   runDiscovery,
 } from '../../../packages/client/src/discovery.js';
+import { runQualification } from '../../../packages/client/src/qualification.js';
 
 function form(id) {
   return {
@@ -81,6 +82,58 @@ describe('authorized form discovery client', () => {
 
     expect(result.candidate_id).toBe('candidate');
     expect(requestBody).toContain('one-time-capability');
+    expect(requestBody).not.toContain('visitor');
+    expect(windowRef.replacement[2]).toBe('/contact?source=home');
+  });
+});
+
+describe('pre-activation qualification client', () => {
+  it('removes the one-time fragment before sending bounded form metadata', async () => {
+    let requestBody = '';
+    const resultNotice = { textContent: '', setAttribute() {} };
+    const documentRef = {
+      title: 'Contact',
+      querySelectorAll: () => [],
+      createElement: () => resultNotice,
+      body: { append() {} },
+    };
+    const locationRef = {
+      hash: '#formvex_qualification=one-time-qualification',
+      pathname: '/contact',
+      search: '?source=home',
+    };
+    const windowRef = {
+      location: locationRef,
+      history: {
+        replaceState: (...args) => {
+          windowRef.replacement = args;
+        },
+      },
+    };
+
+    const result = await runQualification({
+      documentRef,
+      windowRef,
+      fetchImpl: async (_url, options) => {
+        requestBody = options.body;
+
+        return {
+          status: 201,
+          json: async () => ({
+            schema_version: 1,
+            qualification_token: 'submission-token',
+            public_form_id: 'public-contact',
+            configuration_version: 3,
+            form_marker: 'contact-form',
+            captcha: { enabled: false, provider: 'turnstile', site_key: '' },
+          }),
+        };
+      },
+    });
+
+    expect(result.qualification_token).toBe('submission-token');
+    expect(requestBody).toContain('one-time-qualification');
+    expect(requestBody).toContain('"forms":[]');
     expect(requestBody).not.toContain('visitor');
     expect(windowRef.replacement[2]).toBe('/contact?source=home');
   });

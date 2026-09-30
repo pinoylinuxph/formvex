@@ -175,6 +175,102 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertStringNotContainsString('owner@logoslab.xyz', (string) $notFound->getContent());
     }
 
+    public function testQualificationAcceptsThePublishedVersionWithoutMakingItPublic(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $fields = json_encode([[
+            'field_key' => 'message',
+            'control_name' => 'message',
+            'control_type' => 'textarea',
+            'display_label' => 'Message',
+            'parameter_key' => 'message',
+            'ordinal' => 0,
+            'required' => true,
+            'max_length' => 10000,
+            'choices' => [],
+        ]], JSON_THROW_ON_ERROR);
+        $created = $this->request('POST', '/formvex/forms', [
+            '_token' => $csrf,
+            'display_name' => 'Qualification form',
+            'page_host' => 'logoslab.xyz',
+            'page_path' => '/',
+            'form_marker' => 'contactForm',
+            'recipient' => 'owner@logoslab.xyz',
+            'subject' => 'Qualification message',
+            'fields_json' => $fields,
+        ], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        $location = (string) $created->headers->get('Location');
+        preg_match('#/formvex/forms/([0-9a-f-]+)$#', $location, $matches);
+        $publicFormId = $matches[1] ?? '';
+        self::assertNotSame('', $publicFormId);
+
+        $published = $this->request('POST', '/formvex/forms/' . $publicFormId . '/publish', ['_token' => $csrf, 'revision' => '1'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $published->getStatusCode());
+        $started = $this->request('POST', '/formvex/forms/' . $publicFormId . '/qualification/start', ['_token' => $csrf, 'revision' => '2'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $started->getStatusCode());
+        preg_match('/formvex_qualification=([A-Za-z0-9_-]+)/', (string) $started->getContent(), $capabilityMatches);
+        $capability = $capabilityMatches[1] ?? '';
+        self::assertNotSame('', $capability);
+
+        $redeemed = $this->jsonRequest('POST', '/formvex/api/v1/qualification/redeem', [
+            'schema_version' => 1,
+            'qualification' => $capability,
+            'page_path' => '/',
+            'forms' => [[
+                'form_marker' => 'contactForm',
+                'field_shape' => [['control_name' => 'message', 'control_type' => 'textarea']],
+            ]],
+        ], ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://logoslab.xyz']);
+        self::assertSame(Response::HTTP_CREATED, $redeemed->getStatusCode());
+        $redeemedBody = json_decode((string) $redeemed->getContent(), true, 8, JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('qualification_token', $redeemedBody);
+        self::assertArrayNotHasKey('recipient', $redeemedBody);
+
+        $submitted = $this->jsonRequest('POST', '/formvex/api/v1/qualification/submissions', [
+            'qualification_token' => $redeemedBody['qualification_token'],
+            'schema_version' => 1,
+            'page_path' => '/',
+            'form_marker' => 'contactForm',
+            'configuration_version' => 1,
+            'attempt_id' => '0195f2b8-7c3a-4f42-8c11-4ac3b865e092',
+            'fields' => ['message' => 'Synthetic qualification message'],
+            'field_shape' => [['control_name' => 'message', 'control_type' => 'textarea']],
+        ], ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://logoslab.xyz']);
+        self::assertSame(Response::HTTP_ACCEPTED, $submitted->getStatusCode());
+
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        self::assertSame(1, (int) $connection->query('SELECT COUNT(*) FROM submissions WHERE is_qualification_test = 1')->fetchColumn());
+        self::assertSame(1, (int) $connection->query("SELECT COUNT(*) FROM form_configuration_versions WHERE state = 'published'")->fetchColumn());
+
+        $publicResolution = $this->request('GET', '/formvex/api/v1/forms/resolve', [
+            'schema_version' => '1',
+            'page_path' => '/',
+            'form_marker' => 'contactForm',
+        ], [], ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://logoslab.xyz']);
+        self::assertSame(Response::HTTP_NOT_FOUND, $publicResolution->getStatusCode());
+
+        $activation = $this->request('POST', '/formvex/forms/' . $publicFormId . '/activate', ['_token' => $csrf, 'revision' => '2'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $activation->getStatusCode());
+        self::assertStringContainsString('Run a successful SMTP test from Settings before activating this form.', (string) $activation->getContent());
+
+        $connection->exec("UPDATE delivery_jobs SET state = 'sent', last_outcome = 'accepted'");
+        $connection->exec("UPDATE smtp_test_state SET status = 'passed', tested_revision = 1, summary = 'Synthetic SMTP acceptance'");
+        $ready = $this->request('GET', '/formvex/forms/' . $publicFormId, [], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $ready->getStatusCode());
+        self::assertStringContainsString('You can activate this version.', (string) $ready->getContent());
+
+        $activated = $this->request('POST', '/formvex/forms/' . $publicFormId . '/activate', ['_token' => $csrf, 'revision' => '2'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $activated->getStatusCode());
+        self::assertStringContainsString('is active.', (string) $activated->getContent());
+        $resolved = $this->request('GET', '/formvex/api/v1/forms/resolve', ['schema_version' => '1', 'page_path' => '/', 'form_marker' => 'contactForm'], [], ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://logoslab.xyz']);
+        self::assertSame(Response::HTTP_OK, $resolved->getStatusCode());
+
+        $disabled = $this->request('POST', '/formvex/forms/' . $publicFormId . '/disable', ['_token' => $csrf, 'revision' => '2'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
+        self::assertSame(Response::HTTP_OK, $disabled->getStatusCode());
+        $unavailable = $this->request('GET', '/formvex/api/v1/forms/resolve', ['schema_version' => '1', 'page_path' => '/', 'form_marker' => 'contactForm'], [], ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://logoslab.xyz']);
+        self::assertSame(Response::HTTP_NOT_FOUND, $unavailable->getStatusCode());
+    }
+
     public function testPublicSubmissionAcceptsWithoutAdministratorCookieAndRecoversMatchingRetry(): void
     {
         [$session, $csrf] = $this->authenticateAdministrator();

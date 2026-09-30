@@ -165,6 +165,9 @@ final class PdoAbuseStore implements AbuseSettingsStore, RateLimitStore, Captcha
             }
 
             $updated = $this->updateOutage($connection, true, $openedAt, $now, $failureCode, $lastAlertAt, $state->lastSuccessAt);
+            if ($event !== null) {
+                $this->enqueueOperationalAlert($connection, $event, $now);
+            }
             $connection->commit();
 
             return new CaptchaOutageTransition($updated, $event);
@@ -190,6 +193,9 @@ final class PdoAbuseStore implements AbuseSettingsStore, RateLimitStore, Captcha
             $state = $this->getOutageStateFromConnection($connection);
             $event = $state->open ? 'spoke.abuse.captcha_outage_recovered' : null;
             $updated = $this->updateOutage($connection, false, $state->openedAt, $state->lastFailureAt, $state->lastFailureCode, $state->lastAlertAt, $now);
+            if ($event !== null) {
+                $this->enqueueOperationalAlert($connection, $event, $now);
+            }
             $connection->commit();
 
             return new CaptchaOutageTransition($updated, $event);
@@ -338,6 +344,18 @@ final class PdoAbuseStore implements AbuseSettingsStore, RateLimitStore, Captcha
         ]);
 
         return new CaptchaOutageState($open, $openedAt, $failureAt, $failureCode, $alertAt, $successAt);
+    }
+
+    private function enqueueOperationalAlert(PDO $connection, string $eventCode, DateTimeImmutable $occurredAt): void
+    {
+        $table = $connection->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'delivery_alerts' LIMIT 1");
+        if ($table === false || $table->fetchColumn() === false) {
+            return;
+        }
+
+        $timestamp = $this->formatTimestamp($occurredAt);
+        $statement = $connection->prepare("INSERT OR IGNORE INTO delivery_alerts (event_code, state, attempt_count, due_at, created_at, updated_at) VALUES (:event_code, 'queued', 0, :due_at, :created_at, :updated_at)");
+        $statement->execute(['event_code' => $eventCode, 'due_at' => $timestamp, 'created_at' => $timestamp, 'updated_at' => $timestamp]);
     }
 
     /** @param array<string, mixed> $row */

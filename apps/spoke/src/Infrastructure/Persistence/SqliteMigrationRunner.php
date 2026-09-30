@@ -14,6 +14,8 @@ use Formvex\Spoke\Migrations\Version000004CreateFormConfiguration;
 use Formvex\Spoke\Migrations\Version000005CreateFormDiscovery;
 use Formvex\Spoke\Migrations\Version000006CreateSubmissions;
 use Formvex\Spoke\Migrations\Version000007CreateSubmissionAbuse;
+use Formvex\Spoke\Migrations\Version000008CreateEmailDeliveryWorker;
+use Formvex\Spoke\Migrations\Version000009CreateFormActivation;
 use PDO;
 use Throwable;
 
@@ -28,6 +30,8 @@ final readonly class SqliteMigrationRunner
         private Clock $clock,
         private ?Version000006CreateSubmissions $submissionsMigration = null,
         private ?Version000007CreateSubmissionAbuse $submissionAbuseMigration = null,
+        private ?Version000008CreateEmailDeliveryWorker $deliveryWorkerMigration = null,
+        private ?Version000009CreateFormActivation $formActivationMigration = null,
     ) {
     }
 
@@ -45,6 +49,12 @@ final readonly class SqliteMigrationRunner
 
             if ($this->submissionAbuseMigration !== null) {
                 $migrations[] = $this->submissionAbuseMigration;
+            }
+            if ($this->deliveryWorkerMigration !== null) {
+                $migrations[] = $this->deliveryWorkerMigration;
+            }
+            if ($this->formActivationMigration !== null) {
+                $migrations[] = $this->formActivationMigration;
             }
             $knownVersions = array_map(
                 static fn (Migration $migration): string => $migration->version(),

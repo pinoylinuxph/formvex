@@ -53,7 +53,7 @@ final class InstallationCommandTest extends KernelTestCase
         $tester = new CommandTester($command);
         self::assertSame(0, $tester->execute($input));
         self::assertStringContainsString('SUCCESS installation: already_initialized', $tester->getDisplay());
-        self::assertStringContainsString('"schema_version":"000007"', (string) file_get_contents($markerPath));
+        self::assertStringContainsString('"schema_version":"000009"', (string) file_get_contents($markerPath));
     }
 
     public function testInvalidApplicationRootReturnsSafeFailure(): void
