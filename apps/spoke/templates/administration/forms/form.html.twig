@@ -164,7 +164,7 @@
                             <tr>
                                 <th scope="row">Browser qualification</th>
                                 <td>{{ activationState.evidence.endToEndStatus.value|replace({'_': ' '})|capitalize }}</td>
-                                <td>{% if activationState.endToEndCurrent %}The synthetic message was accepted by SMTP. You can activate this version.{% elseif activationState.evidence.endToEndStatus.value == 'accepted' %}The synthetic submission was saved. Run the delivery worker, then refresh this page.{% elseif activationState.evidence.endToEndStatus.value in ['failed', 'uncertain', 'stale'] %}Start a new qualification and review the delivery result.{% else %}Start a browser qualification and submit synthetic test values.{% endif %}</td>
+                                <td>{% if activationState.endToEndCurrent %}{% if activationState.targetVersion %}The synthetic message was accepted by SMTP. You can activate this version.{% else %}The active version has current qualification and SMTP evidence.{% endif %}{% elseif activationState.evidence.endToEndStatus.value == 'accepted' %}The synthetic submission was saved. Run the delivery worker, then refresh this page.{% elseif activationState.evidence.endToEndStatus.value in ['failed', 'uncertain', 'stale'] %}Start a new qualification and review the delivery result.{% else %}Start a browser qualification and submit synthetic test values.{% endif %}</td>
                             </tr>
                         </tbody>
                     </table>

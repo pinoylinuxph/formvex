@@ -262,6 +262,8 @@ final class FormConfigurationHttpTest extends KernelTestCase
         $activated = $this->request('POST', '/formvex/forms/' . $publicFormId . '/activate', ['_token' => $csrf, 'revision' => '2'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
         self::assertSame(Response::HTTP_OK, $activated->getStatusCode());
         self::assertStringContainsString('is active.', (string) $activated->getContent());
+        self::assertStringContainsString('v1 active', (string) $activated->getContent());
+        self::assertStringContainsString('The active version has current qualification and SMTP evidence.', (string) $activated->getContent());
         $resolved = $this->request('GET', '/formvex/api/v1/forms/resolve', ['schema_version' => '1', 'page_path' => '/', 'form_marker' => 'contactForm'], [], ['HTTP_HOST' => 'logoslab.xyz', 'HTTP_ORIGIN' => 'https://logoslab.xyz']);
         self::assertSame(Response::HTTP_OK, $resolved->getStatusCode());
 

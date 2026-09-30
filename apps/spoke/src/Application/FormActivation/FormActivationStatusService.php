@@ -38,22 +38,23 @@ final readonly class FormActivationStatusService
     {
         $paths = $this->storageResolver->resolve($applicationRoot);
         $details = $this->formConfigurationService->details($applicationRoot, $publicFormId, true);
-        $target = $this->latest($details->publishedVersions, FormConfigurationState::PUBLISHED);
         $active = $this->latest($details->publishedVersions, FormConfigurationState::ACTIVE);
+        $target = $this->qualificationTarget($details->publishedVersions, $active);
         $settings = $this->settingsStore->get($paths);
         $smtpTest = $this->settingsStore->getTestState($paths);
         $smtpCurrent = $smtpTest->status->value === 'passed' && $smtpTest->testedRevision === $settings->smtpConfigurationRevision;
+        $evidenceVersion = $target ?? $active;
 
-        if ($target === null) {
-            return new FormActivationStatus(null, $active, FormActivationEvidence::empty($active === null ? 0 : $active->versionNumber, $this->clock->now()), $smtpCurrent, false, false, null, null, null);
+        if ($evidenceVersion === null) {
+            return new FormActivationStatus(null, null, FormActivationEvidence::empty(0, $this->clock->now()), $smtpCurrent, false, false, null, null, null);
         }
 
-        $fingerprint = $this->fingerprint($target, $settings);
-        $evidence = $this->activationStore->evidence($paths, $target->versionId, $target->versionNumber, $this->clock->now());
+        $fingerprint = $this->fingerprint($evidenceVersion, $settings);
+        $evidence = $this->activationStore->evidence($paths, $evidenceVersion->versionId, $evidenceVersion->versionNumber, $this->clock->now());
 
         if ($evidence->endToEndFingerprint !== null && !$evidence->isCurrentFor($fingerprint)) {
-            $this->activationStore->invalidateEvidence($paths, $target->versionId, 'configuration_changed', $this->clock->now());
-            $evidence = $this->activationStore->evidence($paths, $target->versionId, $target->versionNumber, $this->clock->now());
+            $this->activationStore->invalidateEvidence($paths, $evidenceVersion->versionId, 'configuration_changed', $this->clock->now());
+            $evidence = $this->activationStore->evidence($paths, $evidenceVersion->versionId, $evidenceVersion->versionNumber, $this->clock->now());
         }
 
         $qualificationStatus = $evidence->qualificationId === null
@@ -61,13 +62,13 @@ final readonly class FormActivationStatusService
             : $this->activationStore->qualificationStatus($paths, $evidence->qualificationId, $this->clock->now());
 
         if ($qualificationStatus === QualificationStatus::SENT && $evidence->endToEndStatus === QualificationStatus::ACCEPTED) {
-            $this->activationStore->recordEvidenceSent($paths, $target->versionId, $evidence->qualificationId ?? '', $this->clock->now());
-            $evidence = $this->activationStore->evidence($paths, $target->versionId, $target->versionNumber, $this->clock->now());
+            $this->activationStore->recordEvidenceSent($paths, $evidenceVersion->versionId, $evidence->qualificationId ?? '', $this->clock->now());
+            $evidence = $this->activationStore->evidence($paths, $evidenceVersion->versionId, $evidenceVersion->versionNumber, $this->clock->now());
         }
 
         if (in_array($qualificationStatus, [QualificationStatus::FAILED, QualificationStatus::UNCERTAIN], true) && $evidence->endToEndStatus === QualificationStatus::ACCEPTED) {
-            $this->activationStore->recordEvidenceOutcome($paths, $target->versionId, $evidence->qualificationId ?? '', $qualificationStatus, $qualificationStatus === QualificationStatus::FAILED ? 'delivery_failed' : 'delivery_uncertain', $this->clock->now());
-            $evidence = $this->activationStore->evidence($paths, $target->versionId, $target->versionNumber, $this->clock->now());
+            $this->activationStore->recordEvidenceOutcome($paths, $evidenceVersion->versionId, $evidence->qualificationId ?? '', $qualificationStatus, $qualificationStatus === QualificationStatus::FAILED ? 'delivery_failed' : 'delivery_uncertain', $this->clock->now());
+            $evidence = $this->activationStore->evidence($paths, $evidenceVersion->versionId, $evidenceVersion->versionNumber, $this->clock->now());
         }
 
         $endToEndCurrent = $evidence->endToEndPassed($fingerprint);
@@ -78,7 +79,7 @@ final readonly class FormActivationStatusService
             $evidence,
             $smtpCurrent,
             $endToEndCurrent,
-            $target->state === FormConfigurationState::PUBLISHED && $smtpCurrent && $endToEndCurrent,
+            $target !== null && $target->state === FormConfigurationState::PUBLISHED && $smtpCurrent && $endToEndCurrent,
             $qualificationStatus,
             $evidence->endToEndFailureCode,
             $this->qualificationExpiry($paths, $evidence),
@@ -92,6 +93,24 @@ final readonly class FormActivationStatusService
             if ($version->state === $state) {
                 return $version;
             }
+        }
+
+        return null;
+    }
+
+    /** @param list<FormConfigurationRecord> $versions */
+    private function qualificationTarget(array $versions, ?FormConfigurationRecord $active): ?FormConfigurationRecord
+    {
+        foreach ($versions as $version) {
+            if ($version->state !== FormConfigurationState::PUBLISHED) {
+                continue;
+            }
+
+            if ($active !== null && $version->versionNumber <= $active->versionNumber) {
+                continue;
+            }
+
+            return $version;
         }
 
         return null;
