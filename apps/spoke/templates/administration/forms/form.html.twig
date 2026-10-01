@@ -123,12 +123,22 @@
                 <p class="fv-eyebrow">Immutable history</p>
                 <h2 id="published-heading">Published versions</h2>
             </header>
-            {% if details.publishedVersions is empty %}
+            {% set visiblePublishedVersions = publishedVersions|default(details.publishedVersions) %}
+            {% if visiblePublishedVersions is empty %}
                 <p>No published version exists. Complete the draft before publishing.</p>
             {% else %}
                 <div class="fv-table-wrap"><table class="fv-table"><thead><tr><th scope="col">Version</th><th scope="col">State</th><th scope="col">Fields</th><th scope="col">Published</th></tr></thead><tbody>
-                {% for version in details.publishedVersions %}<tr><th scope="row">v{{ version.versionNumber }}</th><td>{{ version.state.value|capitalize }}</td><td>{{ version.fields|length }}</td><td>{{ version.publishedAt|date('Y-m-d H:i') }}</td></tr>{% endfor %}
+                {% for version in visiblePublishedVersions %}<tr><th scope="row">v{{ version.versionNumber }}</th><td>{{ version.state.value|capitalize }}</td><td>{{ version.fields|length }}</td><td>{{ version.publishedAt|date('Y-m-d H:i') }}</td></tr>{% endfor %}
                 </tbody></table></div>
+                {% include '@platform_ui/components/pagination.html.twig' with {
+                    pages: versionPagination.pages,
+                    currentPage: versionPagination.page,
+                    pageCount: versionPagination.pageCount,
+                    previous: versionPagination.previous,
+                    next: versionPagination.next,
+                    pageSizeControl: {action: path('spoke_admin_form_edit', {publicFormId: details.draft.publicId}), id: 'published-version-page-size', name: 'version_page_size', value: versionPagination.pageSize, options: [25, 50, 100], hidden: []},
+                    ariaLabel: 'Published version pages',
+                } only %}
             {% endif %}
             <form method="post" action="{{ path('spoke_admin_form_publish', {publicFormId: details.draft.publicId}) }}" class="fv-action-bar">
                 <input type="hidden" name="_token" value="{{ csrfToken }}">

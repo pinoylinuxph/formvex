@@ -55,6 +55,15 @@
                     </tbody>
                 </table>
             </div>
+            {% include '@platform_ui/components/pagination.html.twig' with {
+                pages: pagination.pages,
+                currentPage: pagination.page,
+                pageCount: pagination.pageCount,
+                previous: pagination.previous,
+                next: pagination.next,
+                pageSizeControl: {action: path('spoke_admin_forms'), id: 'forms-page-size', name: 'page_size', value: pagination.pageSize, options: [25, 50, 100], hidden: []},
+                ariaLabel: 'Form pages',
+            } only %}
         {% endif %}
     </section>
 

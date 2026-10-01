@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Formvex\Spoke\Admin\Forms;
 
+use Formvex\Spoke\Admin\Portal\PaginationView;
 use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
@@ -17,6 +18,7 @@ use Formvex\Spoke\Domain\FormActivation\FormActivationStatus;
 use Formvex\Spoke\Domain\FormConfiguration\Exception\FormConfigurationFailure;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationDetails;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationRecord;
+use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationSummary;
 use Formvex\Spoke\Domain\FormDiscovery\DiscoveryCandidate;
 use Formvex\Spoke\Domain\FormDiscovery\Exception\FormDiscoveryFailure;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
@@ -56,9 +58,14 @@ final class FormConfigurationController extends AbstractController
         }
 
         try {
+            $activeForms = $this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot);
+            $allForms = $this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot, true);
+            $pagination = PaginationView::fromRequest($request, $activeForms);
+
             return $this->renderPage($request, 'administration/forms/index.html.twig', [
-                'forms' => $this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot),
-                'trashCount' => count($this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot, true)) - count($this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot)),
+                'forms' => $pagination['items'],
+                'pagination' => $pagination,
+                'trashCount' => count($allForms) - count($activeForms),
                 'message' => null,
                 'messageVariant' => 'information',
             ]);
@@ -83,11 +90,27 @@ final class FormConfigurationController extends AbstractController
             return $this->redirectToRoute('spoke_admin_password_change');
         }
 
-        return $this->renderPage($request, 'administration/forms/trash.html.twig', [
-            'forms' => $this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot, true),
-            'message' => null,
-            'messageVariant' => 'information',
-        ]);
+        try {
+            $forms = array_values(array_filter(
+                $this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot, true),
+                static fn (FormConfigurationSummary $form): bool => $form->trashed,
+            ));
+            $pagination = PaginationView::fromRequest($request, $forms);
+
+            return $this->renderPage($request, 'administration/forms/trash.html.twig', [
+                'forms' => $pagination['items'],
+                'pagination' => $pagination,
+                'message' => null,
+                'messageVariant' => 'information',
+            ]);
+        } catch (FormConfigurationFailure $failure) {
+            return $this->renderPage($request, 'administration/forms/trash.html.twig', [
+                'forms' => [],
+                'pagination' => PaginationView::fromRequest($request, []),
+                'message' => $failure->getMessage(),
+                'messageVariant' => 'danger',
+            ], Response::HTTP_SERVICE_UNAVAILABLE);
+        }
     }
 
     #[Route('/formvex/forms/new', name: 'spoke_admin_form_new', methods: ['GET'])]
@@ -617,7 +640,7 @@ final class FormConfigurationController extends AbstractController
         $sessionId = $request->cookies->get(self::SESSION_COOKIE);
         $sessionId = is_string($sessionId) ? $sessionId : '';
         $csrfToken = $this->csrfToken($request, $sessionId);
-        $response = $this->render($template, array_merge([
+        $parameters = array_merge([
             'csrfToken' => $csrfToken,
             'currentRoute' => 'spoke_admin_forms',
             'theme' => PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE)),
@@ -627,7 +650,15 @@ final class FormConfigurationController extends AbstractController
             'navItems' => array_values(PortalNavigation::destinations()),
             'pageTitle' => 'Forms',
             'pageDescription' => 'Create, review, publish, and retire local form configurations.',
-        ], $extra), new Response('', $status));
+        ], $extra);
+
+        if (($details = $parameters['details'] ?? null) instanceof FormConfigurationDetails) {
+            $versionPagination = PaginationView::fromRequest($request, $details->publishedVersions, 'version_page', 'version_page_size');
+            $parameters['publishedVersions'] = $versionPagination['items'];
+            $parameters['versionPagination'] = $versionPagination;
+        }
+
+        $response = $this->render($template, $parameters, new Response('', $status));
 
         if ($request->cookies->get(self::CSRF_COOKIE) !== $csrfToken) {
             $response->headers->setCookie($this->cookie(self::CSRF_COOKIE, $csrfToken));

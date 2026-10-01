@@ -9,11 +9,19 @@
     {% include '@platform_ui/components/feedback.html.twig' with {message: message, title: 'Trash notice', variant: messageVariant} only %}
     <section class="fv-panel" aria-labelledby="trash-heading">
         <div class="fv-section-heading"><p class="fv-eyebrow">Recoverable records</p><h2 id="trash-heading">Removed forms</h2><p>Permanent deletion is manual, audited, and rejected when protected records reference the form.</p></div>
-        {% set trashForms = forms|filter(form => form.trashed) %}
-        {% if trashForms is empty %}<p>No forms are currently in Trash.</p>{% else %}
+        {% if forms is empty %}<p>No forms are currently in Trash.</p>{% else %}
             <div class="fv-table-wrap"><table class="fv-table"><thead><tr><th scope="col">Form</th><th scope="col">Last published</th><th scope="col">Actions</th></tr></thead><tbody>
-            {% for form in trashForms %}<tr><th scope="row">{{ form.displayName }}</th><td>{% if form.publishedState %}v{{ form.publishedVersion }} · {{ form.publishedState.value|capitalize }}{% else %}Not published{% endif %}</td><td><a class="fv-button fv-button-secondary fv-button-small" href="{{ path('spoke_admin_form_edit', {publicFormId: form.publicId}) }}">Review</a></td></tr>{% endfor %}
+            {% for form in forms %}<tr><th scope="row">{{ form.displayName }}</th><td>{% if form.publishedState %}v{{ form.publishedVersion }} · {{ form.publishedState.value|capitalize }}{% else %}Not published{% endif %}</td><td><a class="fv-button fv-button-secondary fv-button-small" href="{{ path('spoke_admin_form_edit', {publicFormId: form.publicId}) }}">Review</a></td></tr>{% endfor %}
             </tbody></table></div>
+            {% include '@platform_ui/components/pagination.html.twig' with {
+                pages: pagination.pages,
+                currentPage: pagination.page,
+                pageCount: pagination.pageCount,
+                previous: pagination.previous,
+                next: pagination.next,
+                pageSizeControl: {action: path('spoke_admin_forms_trash'), id: 'trash-page-size', name: 'page_size', value: pagination.pageSize, options: [25, 50, 100], hidden: []},
+                ariaLabel: 'Form Trash pages',
+            } only %}
         {% endif %}
     </section>
 </div>

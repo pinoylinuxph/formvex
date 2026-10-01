@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Formvex\Spoke\Admin\Forms;
 
+use Formvex\Spoke\Admin\Portal\PaginationView;
 use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
@@ -14,6 +15,7 @@ use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Administration\SessionRecord;
 use Formvex\Spoke\Domain\FormActivation\Exception\FormActivationFailure;
 use Formvex\Spoke\Domain\FormConfiguration\Exception\FormConfigurationFailure;
+use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationDetails;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationRecord;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
 use JsonException;
@@ -167,7 +169,7 @@ final class FormActivationController extends AbstractController
         $csrfToken = is_string($csrfToken) && $csrfToken !== ''
             ? $csrfToken
             : $this->administratorService->refreshCsrfToken($this->runtimeConfiguration->applicationRoot, $sessionId);
-        $response = $this->render('administration/forms/form.html.twig', array_merge([
+        $parameters = array_merge([
             'csrfToken' => $csrfToken,
             'currentRoute' => 'spoke_admin_forms',
             'theme' => PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE)),
@@ -177,7 +179,15 @@ final class FormActivationController extends AbstractController
             'navItems' => array_values(PortalNavigation::destinations()),
             'pageTitle' => 'Forms',
             'pageDescription' => 'Create, review, publish, and retire local form configurations.',
-        ], $parameters));
+        ], $parameters);
+
+        if (($details = $parameters['details'] ?? null) instanceof FormConfigurationDetails) {
+            $versionPagination = PaginationView::fromRequest($request, $details->publishedVersions, 'version_page', 'version_page_size');
+            $parameters['publishedVersions'] = $versionPagination['items'];
+            $parameters['versionPagination'] = $versionPagination;
+        }
+
+        $response = $this->render('administration/forms/form.html.twig', $parameters);
 
         if ($request->cookies->get(self::CSRF_COOKIE) !== $csrfToken) {
             $response->headers->setCookie(Cookie::create(self::CSRF_COOKIE, $csrfToken, 0, '/formvex', null, true, true, false, Cookie::SAMESITE_LAX));

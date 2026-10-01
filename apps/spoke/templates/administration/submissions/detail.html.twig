@@ -102,7 +102,19 @@
 
         <section class="fv-panel" aria-labelledby="submission-history-heading">
             <div class="fv-section-heading"><p class="fv-eyebrow">Audit history</p><h2 id="submission-history-heading">Review events</h2><p>Only safe action names, outcomes, timestamps, and the opaque submission identity are retained.</p></div>
-            {% if details.auditEvents is empty %}<p class="fv-content-muted">No review actions have been recorded.</p>{% else %}<div class="fv-table-container"><table class="fv-table"><thead><tr><th scope="col">Event</th><th scope="col">Outcome</th><th scope="col">Time</th></tr></thead><tbody>{% for event in details.auditEvents %}<tr><th scope="row">{{ event.event }}</th><td>{{ event.outcome|capitalize }}</td><td><time datetime="{{ event.occurredAt }}">{{ event.occurredAt|date('Y-m-d H:i') }}</time></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+            {% set visibleAuditEvents = auditEvents|default(details.auditEvents) %}
+            {% if visibleAuditEvents is empty %}<p class="fv-content-muted">No review actions have been recorded.</p>{% else %}
+                <div class="fv-table-container"><table class="fv-table"><thead><tr><th scope="col">Event</th><th scope="col">Outcome</th><th scope="col">Time</th></tr></thead><tbody>{% for event in visibleAuditEvents %}<tr><th scope="row">{{ event.event }}</th><td>{{ event.outcome|capitalize }}</td><td><time datetime="{{ event.occurredAt }}">{{ event.occurredAt|date('Y-m-d H:i') }}</time></td></tr>{% endfor %}</tbody></table></div>
+                {% include '@platform_ui/components/pagination.html.twig' with {
+                    pages: auditPagination.pages,
+                    currentPage: auditPagination.page,
+                    pageCount: auditPagination.pageCount,
+                    previous: auditPagination.previous,
+                    next: auditPagination.next,
+                    pageSizeControl: {action: path('spoke_admin_submission_detail', {submissionId: details.publicId}), id: 'audit-page-size', name: 'audit_page_size', value: auditPagination.pageSize, options: [25, 50, 100], hidden: []},
+                    ariaLabel: 'Audit event pages',
+                } only %}
+            {% endif %}
         </section>
     {% endif %}
 </div>

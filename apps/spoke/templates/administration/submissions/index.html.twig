@@ -74,14 +74,6 @@
                 <option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>Oldest accepted</option>
             </select>
         </div>
-        <div class="fv-filter-field fv-filter-page-size">
-            <label for="submission-page-size">Rows per page</label>
-            <select id="submission-page-size" name="page_size">
-                <option value="25"{% if query.pageSize == 25 %} selected{% endif %}>25</option>
-                <option value="50"{% if query.pageSize == 50 %} selected{% endif %}>50</option>
-                <option value="100"{% if query.pageSize == 100 %} selected{% endif %}>100</option>
-            </select>
-        </div>
         <div class="fv-filter-actions">
             <button class="fv-button fv-button-primary" type="submit">Apply filters</button>
             <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_submissions') }}">Reset</a>
@@ -104,13 +96,6 @@
         } only %}
     {% else %}
         <section class="fv-panel" aria-labelledby="submission-list-heading">
-            <div class="fv-section-heading fv-submission-list-heading">
-                <div>
-                    <p class="fv-eyebrow">Review inventory</p>
-                    <h2 id="submission-list-heading">{{ result.total }} record{% if result.total != 1 %}s{% endif %}</h2>
-                </div>
-                <span class="fv-page-note">Page {{ result.page }} of {{ result.pageCount }}</span>
-            </div>
             <div class="fv-table-container" tabindex="0" aria-label="Submission review table">
                 <table class="fv-table">
                     <thead>
@@ -143,13 +128,15 @@
                 </table>
             </div>
         </section>
-        {% if pagination is not empty %}
-            <nav class="fv-pagination" aria-label="Submission pages">
-                {% for page in pagination %}
-                    {% if page.current %}<span class="fv-pagination-current" aria-current="page">{{ page.page }}</span>{% else %}<a href="{{ page.href }}">{{ page.page }}</a>{% endif %}
-                {% endfor %}
-            </nav>
-        {% endif %}
+        {% include '@platform_ui/components/pagination.html.twig' with {
+            pages: pagination.pages|default([]),
+            currentPage: pagination.currentPage|default(1),
+            pageCount: pagination.pageCount|default(1),
+            previous: pagination.previous|default(null),
+            next: pagination.next|default(null),
+            pageSizeControl: pageSizeControl|default(null),
+            ariaLabel: 'Submission pages',
+        } only %}
     {% endif %}
 </div>
 {% endblock %}

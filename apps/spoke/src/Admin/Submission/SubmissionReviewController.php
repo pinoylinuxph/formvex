@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Formvex\Spoke\Admin\Submission;
 
+use Formvex\Spoke\Admin\Portal\PaginationView;
 use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
@@ -59,7 +60,8 @@ final class SubmissionReviewController extends AbstractController
                 'result' => $result,
                 'forms' => $forms,
                 'queryString' => $this->queryString($query),
-                'pagination' => $this->pagination($query, $result->pageCount),
+                'pagination' => $this->pagination($query, $result->pageCount, $result->total),
+                'pageSizeControl' => $this->pageSizeControl($query),
                 'message' => $query->errors === [] ? $this->notice($request->query->get('notice')) : implode(' ', $query->errors),
                 'messageVariant' => $query->errors === [] ? 'information' : 'warning',
                 'messageTitle' => $query->errors === [] ? 'Submission review' : 'Filter corrected',
@@ -70,7 +72,7 @@ final class SubmissionReviewController extends AbstractController
                 'result' => null,
                 'forms' => [],
                 'queryString' => $this->queryString($query),
-                'pagination' => [],
+                'pagination' => ['pages' => [], 'previous' => null, 'next' => null],
                 'message' => $failure->getMessage(),
                 'messageVariant' => 'danger',
                 'messageTitle' => 'Submissions could not be loaded',
@@ -92,9 +94,12 @@ final class SubmissionReviewController extends AbstractController
         $query = SubmissionReviewQuery::fromInput($request->query->all());
         try {
             $details = $this->reviewService->details($this->runtimeConfiguration->applicationRoot, $submissionId);
+            $auditPagination = PaginationView::fromRequest($request, $details->auditEvents, 'audit_page', 'audit_page_size');
 
             return $this->renderPage($request, 'administration/submissions/detail.html.twig', [
                 'details' => $details,
+                'auditEvents' => $auditPagination['items'],
+                'auditPagination' => $auditPagination,
                 'queryString' => $this->queryString($query),
                 'returnQuery' => $this->queryString($query),
                 'actionTokens' => $this->actionTokens($submissionId),
@@ -236,11 +241,33 @@ final class SubmissionReviewController extends AbstractController
         return http_build_query($query->toQuery(), '', '&', PHP_QUERY_RFC3986);
     }
 
-    /** @return list<array{page: int, href: string, current: bool}> */
-    private function pagination(SubmissionReviewQuery $query, int $pageCount): array
+    /** @return array{action: string, id: string, name: string, label: string, value: int, options: list<int>, hidden: list<array{name: string, value: string}>} */
+    private function pageSizeControl(SubmissionReviewQuery $query): array
     {
-        if ($pageCount <= 1) {
-            return [];
+        $hidden = [];
+        foreach ($query->toQuery() as $name => $value) {
+            if ($name === 'page' || $name === 'page_size') {
+                continue;
+            }
+            $hidden[] = ['name' => $name, 'value' => $value];
+        }
+
+        return [
+            'action' => $this->generateUrl('spoke_admin_submissions'),
+            'id' => 'submission-page-size',
+            'name' => 'page_size',
+            'label' => 'Rows per page',
+            'value' => $query->pageSize,
+            'options' => [25, 50, 100],
+            'hidden' => $hidden,
+        ];
+    }
+
+    /** @return array{currentPage: int, pageCount: int, pages: list<array{page: int, href: string, current: bool}>, previous: array{href: string, disabled: bool}|null, next: array{href: string, disabled: bool}|null} */
+    private function pagination(SubmissionReviewQuery $query, int $pageCount, int $total): array
+    {
+        if ($total <= 0) {
+            return ['currentPage' => 1, 'pageCount' => 1, 'pages' => [], 'previous' => null, 'next' => null];
         }
         $start = max(1, $query->page - 2);
         $end = min($pageCount, $query->page + 2);
@@ -249,7 +276,19 @@ final class SubmissionReviewController extends AbstractController
             $items[] = ['page' => $page, 'href' => '?' . http_build_query($query->toQuery($page), '', '&', PHP_QUERY_RFC3986), 'current' => $page === $query->page];
         }
 
-        return $items;
+        return [
+            'currentPage' => $query->page,
+            'pageCount' => $pageCount,
+            'pages' => $items,
+            'previous' => [
+                'href' => '?' . http_build_query($query->toQuery(max(1, $query->page - 1)), '', '&', PHP_QUERY_RFC3986),
+                'disabled' => $query->page <= 1,
+            ],
+            'next' => [
+                'href' => '?' . http_build_query($query->toQuery(min($pageCount, $query->page + 1)), '', '&', PHP_QUERY_RFC3986),
+                'disabled' => $query->page >= $pageCount,
+            ],
+        ];
     }
 
     private function safeReturnQuery(string $value): string
