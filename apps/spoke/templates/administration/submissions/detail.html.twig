@@ -107,8 +107,12 @@
                 <div class="fv-table-container"><table class="fv-table"><thead><tr><th scope="col">Event</th><th scope="col">Outcome</th><th scope="col">Time</th></tr></thead><tbody>{% for event in visibleAuditEvents %}<tr><th scope="row">{{ event.event }}</th><td>{{ event.outcome|capitalize }}</td><td><time datetime="{{ event.occurredAt }}">{{ event.occurredAt|date('Y-m-d H:i') }}</time></td></tr>{% endfor %}</tbody></table></div>
                 {% include '@platform_ui/components/pagination.html.twig' with {
                     pages: auditPagination.pages,
+                    total: auditPagination.total,
+                    firstItem: auditPagination.firstItem,
+                    lastItem: auditPagination.lastItem,
                     currentPage: auditPagination.page,
                     pageCount: auditPagination.pageCount,
+                    pageParameter: auditPagination.pageParameter,
                     previous: auditPagination.previous,
                     next: auditPagination.next,
                     pageSizeControl: {action: path('spoke_admin_submission_detail', {submissionId: details.publicId}), id: 'audit-page-size', name: 'audit_page_size', value: auditPagination.pageSize, options: [25, 50, 100], hidden: []},

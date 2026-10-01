@@ -263,12 +263,14 @@ final class SubmissionReviewController extends AbstractController
         ];
     }
 
-    /** @return array{currentPage: int, pageCount: int, pages: list<array{page: int, href: string, current: bool}>, previous: array{href: string, disabled: bool}|null, next: array{href: string, disabled: bool}|null} */
+    /** @return array{currentPage: int, pageCount: int, total: int, firstItem: int, lastItem: int, pageParameter: string, pageSizeParameter: string, pages: list<array{page: int, href: string, current: bool}>, previous: array{href: string, disabled: bool}|null, next: array{href: string, disabled: bool}|null} */
     private function pagination(SubmissionReviewQuery $query, int $pageCount, int $total): array
     {
         if ($total <= 0) {
-            return ['currentPage' => 1, 'pageCount' => 1, 'pages' => [], 'previous' => null, 'next' => null];
+            return ['currentPage' => 1, 'pageCount' => 1, 'total' => 0, 'firstItem' => 0, 'lastItem' => 0, 'pageParameter' => 'page', 'pageSizeParameter' => 'page_size', 'pages' => [], 'previous' => null, 'next' => null];
         }
+        $firstItem = (($query->page - 1) * $query->pageSize) + 1;
+        $lastItem = min($query->page * $query->pageSize, $total);
         $start = max(1, $query->page - 2);
         $end = min($pageCount, $query->page + 2);
         $items = [];
@@ -279,6 +281,11 @@ final class SubmissionReviewController extends AbstractController
         return [
             'currentPage' => $query->page,
             'pageCount' => $pageCount,
+            'total' => $total,
+            'firstItem' => $firstItem,
+            'lastItem' => $lastItem,
+            'pageParameter' => 'page',
+            'pageSizeParameter' => 'page_size',
             'pages' => $items,
             'previous' => [
                 'href' => '?' . http_build_query($query->toQuery(max(1, $query->page - 1)), '', '&', PHP_QUERY_RFC3986),

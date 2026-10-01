@@ -127,13 +127,17 @@
             {% if visiblePublishedVersions is empty %}
                 <p>No published version exists. Complete the draft before publishing.</p>
             {% else %}
-                <div class="fv-table-wrap"><table class="fv-table"><thead><tr><th scope="col">Version</th><th scope="col">State</th><th scope="col">Fields</th><th scope="col">Published</th></tr></thead><tbody>
+                <div class="fv-table-container" tabindex="0" aria-label="Published versions table"><table class="fv-table"><thead><tr><th scope="col">Version</th><th scope="col">State</th><th scope="col">Fields</th><th scope="col">Published</th></tr></thead><tbody>
                 {% for version in visiblePublishedVersions %}<tr><th scope="row">v{{ version.versionNumber }}</th><td>{{ version.state.value|capitalize }}</td><td>{{ version.fields|length }}</td><td>{{ version.publishedAt|date('Y-m-d H:i') }}</td></tr>{% endfor %}
                 </tbody></table></div>
                 {% include '@platform_ui/components/pagination.html.twig' with {
                     pages: versionPagination.pages,
+                    total: versionPagination.total,
+                    firstItem: versionPagination.firstItem,
+                    lastItem: versionPagination.lastItem,
                     currentPage: versionPagination.page,
                     pageCount: versionPagination.pageCount,
+                    pageParameter: versionPagination.pageParameter,
                     previous: versionPagination.previous,
                     next: versionPagination.next,
                     pageSizeControl: {action: path('spoke_admin_form_edit', {publicFormId: details.draft.publicId}), id: 'published-version-page-size', name: 'version_page_size', value: versionPagination.pageSize, options: [25, 50, 100], hidden: []},
@@ -156,7 +160,7 @@
                     <p>A published version stays private until the configured SMTP connection and a browser qualification both succeed. Qualification uses synthetic values and the existing website form controls.</p>
                 </header>
 
-                <div class="fv-table-wrap">
+                <div class="fv-table-container" tabindex="0" aria-label="Activation readiness table">
                     <table class="fv-table">
                         <caption class="sr-only">Activation readiness</caption>
                         <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Next action</th></tr></thead>

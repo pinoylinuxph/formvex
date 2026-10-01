@@ -1,47 +1,50 @@
 {% set pageItems = pages|default([]) %}
+{% set currentPageNumber = currentPage|default(1) %}
+{% set totalPageCount = pageCount|default(1) %}
 {% if pageItems is not empty %}
     <nav class="fv-pagination" aria-label="{{ ariaLabel|default('Pagination') }}">
+        <span class="fv-pagination-range">{{ firstItem|default(0) }}–{{ lastItem|default(0) }} of {{ total|default(0) }}</span>
         {% if pageSizeControl is defined and pageSizeControl is not null %}
             <form class="fv-pagination-size" method="get" action="{{ pageSizeControl.action }}">
                 {% for hidden in pageSizeControl.hidden|default([]) %}
                     <input type="hidden" name="{{ hidden.name }}" value="{{ hidden.value }}">
                 {% endfor %}
-                <label for="{{ pageSizeControl.id }}">{{ pageSizeControl.label|default('Rows per page') }}</label>
-                <select class="fv-input" id="{{ pageSizeControl.id }}" name="{{ pageSizeControl.name }}">
+                <label for="{{ pageSizeControl.id }}">Rows</label>
+                <select class="fv-input" id="{{ pageSizeControl.id }}" name="{{ pageSizeControl.name }}" data-pagination-page-size>
                     {% for option in pageSizeControl.options %}
                         <option value="{{ option }}"{% if pageSizeControl.value == option %} selected{% endif %}>{{ option }}</option>
                     {% endfor %}
                 </select>
-                <button class="fv-button fv-button-secondary fv-button-small" type="submit">Apply</button>
+                <button class="fv-visually-hidden" type="submit">Apply rows per page</button>
             </form>
         {% endif %}
         <div class="fv-pagination-controls">
-            <span class="fv-pagination-summary">Page {{ currentPage|default(1) }} of {{ pageCount|default(1) }}</span>
             {% if previous is defined and previous is not null %}
                 {% if previous.disabled|default(false) %}
-                    <span class="fv-pagination-link fv-pagination-disabled" aria-disabled="true">Previous</span>
+                    <span class="fv-pagination-link fv-pagination-disabled" aria-disabled="true" title="Previous page"><span aria-hidden="true">‹</span><span class="fv-visually-hidden">Previous page</span></span>
                 {% else %}
-                    <a class="fv-pagination-link" href="{{ previous.href }}" rel="prev" aria-label="Previous page">Previous</a>
+                    <a class="fv-pagination-link" href="{{ previous.href }}" rel="prev" aria-label="Previous page"><span aria-hidden="true">‹</span></a>
                 {% endif %}
             {% endif %}
-
-            <div class="fv-pagination-pages" aria-label="Page selection">
-                {% for page in pageItems %}
-                    {% if page.current %}
-                        <span class="fv-pagination-link fv-pagination-current" aria-current="page">{{ page.page }}</span>
-                    {% else %}
-                        <a class="fv-pagination-link" href="{{ page.href }}" aria-label="Page {{ page.page }}">{{ page.page }}</a>
-                    {% endif %}
-                {% endfor %}
-            </div>
-
+            <span class="fv-pagination-summary">Page {{ currentPageNumber }} of {{ totalPageCount }}</span>
             {% if next is defined and next is not null %}
                 {% if next.disabled|default(false) %}
-                    <span class="fv-pagination-link fv-pagination-disabled" aria-disabled="true">Next</span>
+                    <span class="fv-pagination-link fv-pagination-disabled" aria-disabled="true" title="Next page"><span aria-hidden="true">›</span><span class="fv-visually-hidden">Next page</span></span>
                 {% else %}
-                    <a class="fv-pagination-link" href="{{ next.href }}" rel="next" aria-label="Next page">Next</a>
+                    <a class="fv-pagination-link" href="{{ next.href }}" rel="next" aria-label="Next page"><span aria-hidden="true">›</span></a>
                 {% endif %}
             {% endif %}
         </div>
+        {% if pageSizeControl is defined and pageSizeControl is not null %}
+            <form class="fv-pagination-goto" method="get" action="{{ pageSizeControl.action }}">
+                {% for hidden in pageSizeControl.hidden|default([]) %}
+                    <input type="hidden" name="{{ hidden.name }}" value="{{ hidden.value }}">
+                {% endfor %}
+                <input type="hidden" name="{{ pageSizeControl.name }}" value="{{ pageSizeControl.value }}">
+                <label for="{{ pageSizeControl.id }}-goto">Go to</label>
+                <input class="fv-input" id="{{ pageSizeControl.id }}-goto" name="{{ pageParameter|default('page') }}" type="number" min="1" max="{{ totalPageCount }}" value="{{ currentPageNumber }}" inputmode="numeric" required>
+                <button class="fv-button fv-button-secondary" type="submit">Go</button>
+            </form>
+        {% endif %}
     </nav>
 {% endif %}

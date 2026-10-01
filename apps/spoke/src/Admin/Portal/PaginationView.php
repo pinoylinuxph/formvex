@@ -11,7 +11,7 @@ final class PaginationView
     /**
      * @template T
      * @param list<T> $items
-     * @return array{items: list<T>, page: int, pageCount: int, pageSize: int, pages: list<array{page: int, href: string, current: bool}>, previous: array{href: string, disabled: bool}|null, next: array{href: string, disabled: bool}|null}
+     * @return array{items: list<T>, total: int, firstItem: int, lastItem: int, page: int, pageCount: int, pageSize: int, pageParameter: string, pageSizeParameter: string, pages: list<array{page: int, href: string, current: bool}>, previous: array{href: string, disabled: bool}|null, next: array{href: string, disabled: bool}|null}
      */
     public static function fromRequest(Request $request, array $items, string $pageParameter = 'page', string $pageSizeParameter = 'page_size'): array
     {
@@ -21,6 +21,9 @@ final class PaginationView
         $pageSize = is_string($rawPageSize) && in_array((int) $rawPageSize, [25, 50, 100], true) ? (int) $rawPageSize : 25;
         $pageCount = max(1, (int) ceil(count($items) / $pageSize));
         $page = min($page, $pageCount);
+        $total = count($items);
+        $firstItem = $total > 0 ? (($page - 1) * $pageSize) + 1 : 0;
+        $lastItem = $total > 0 ? min($page * $pageSize, $total) : 0;
         $pages = [];
 
         if (count($items) > 0) {
@@ -37,12 +40,17 @@ final class PaginationView
 
         return [
             'items' => array_slice($items, ($page - 1) * $pageSize, $pageSize),
+            'total' => $total,
+            'firstItem' => $firstItem,
+            'lastItem' => $lastItem,
             'page' => $page,
             'pageCount' => $pageCount,
             'pageSize' => $pageSize,
+            'pageParameter' => $pageParameter,
+            'pageSizeParameter' => $pageSizeParameter,
             'pages' => $pages,
-            'previous' => count($items) > 0 ? ['href' => self::href($pageParameter, $pageSizeParameter, max(1, $page - 1), $pageSize), 'disabled' => $page <= 1] : null,
-            'next' => count($items) > 0 ? ['href' => self::href($pageParameter, $pageSizeParameter, min($pageCount, $page + 1), $pageSize), 'disabled' => $page >= $pageCount] : null,
+            'previous' => $total > 0 ? ['href' => self::href($pageParameter, $pageSizeParameter, max(1, $page - 1), $pageSize), 'disabled' => $page <= 1] : null,
+            'next' => $total > 0 ? ['href' => self::href($pageParameter, $pageSizeParameter, min($pageCount, $page + 1), $pageSize), 'disabled' => $page >= $pageCount] : null,
         ];
     }
 

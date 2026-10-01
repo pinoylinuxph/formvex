@@ -95,7 +95,7 @@
                         message: 'Message'
                     } %}
                     {% set fieldDefinitions = candidateFieldsByForm[loop.index0]|default([]) %}
-                    <div class="fv-table-wrap">
+                    <div class="fv-table-container" tabindex="0" aria-label="Detected controls table">
                         <table class="fv-table">
                             <caption class="fv-visually-hidden">Detected controls for {{ form.displayName }}</caption>
                             <thead>
@@ -120,7 +120,7 @@
                                     <td>{{ control.required ? 'Yes' : 'No' }}</td>
                                     <td>{% if control.suggestedParameters is empty %}<span class="fv-status-badge">Custom parameter required</span>{% else %}{{ control.suggestedParameters|join(', ') }}{% endif %}</td>
                                     <td>{% if isBuiltIn %}{{ builtInParameters[field.parameter_key] }}{% else %}<span class="fv-status-badge">Needs mapping</span>{% endif %}</td>
-                                    <td><button class="fv-button fv-button-secondary fv-button-small" type="button" data-discovery-dialog-open="discovery-dialog-{{ formIndex }}-{{ loop.index }}">Review</button></td>
+                                    <td><button class="fv-button fv-button-secondary" type="button" data-discovery-dialog-open="discovery-dialog-{{ formIndex }}-{{ loop.index }}">Review</button></td>
                                 </tr>
                             {% endfor %}
                             </tbody>

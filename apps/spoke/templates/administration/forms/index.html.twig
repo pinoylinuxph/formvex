@@ -23,12 +23,7 @@
         variant: messageVariant,
     } only %}
 
-    <section class="fv-panel" aria-labelledby="forms-list-heading">
-        <div class="fv-section-heading">
-            <p class="fv-eyebrow">Configuration inventory</p>
-            <h2 id="forms-list-heading">Configured forms</h2>
-            <p>Drafts remain private. A published version is not publicly resolvable until the activation unit approves it.</p>
-        </div>
+    <section class="fv-panel">
         {% if forms is empty %}
             {% include '@platform_ui/components/empty_state.html.twig' with {
                 eyebrow: 'No forms',
@@ -37,7 +32,7 @@
                 message: 'Start with the page identity and form marker detected from the existing website source.',
             } only %}
         {% else %}
-            <div class="fv-table-wrap">
+            <div class="fv-table-container" tabindex="0" aria-label="Configured forms table">
                 <table class="fv-table">
                     <thead>
                     <tr><th scope="col">Form</th><th scope="col">Draft</th><th scope="col">Published</th><th scope="col">Updated</th><th scope="col"><span class="fv-visually-hidden">Actions</span></th></tr>
@@ -49,7 +44,7 @@
                             <td>Revision {{ form.draftRevision }}</td>
                             <td>{% if form.publishedState %}v{{ form.publishedVersion }} · {{ form.publishedState.value|capitalize }}{% else %}Not published{% endif %}</td>
                             <td><time datetime="{{ form.updatedAt|date('c') }}">{{ form.updatedAt|date('Y-m-d H:i') }}</time></td>
-                            <td><a class="fv-button fv-button-secondary fv-button-small" href="{{ path('spoke_admin_form_edit', {publicFormId: form.publicId}) }}">Open</a></td>
+                            <td><a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_form_edit', {publicFormId: form.publicId}) }}">Open</a></td>
                         </tr>
                     {% endfor %}
                     </tbody>
@@ -57,8 +52,12 @@
             </div>
             {% include '@platform_ui/components/pagination.html.twig' with {
                 pages: pagination.pages,
+                total: pagination.total,
+                firstItem: pagination.firstItem,
+                lastItem: pagination.lastItem,
                 currentPage: pagination.page,
                 pageCount: pagination.pageCount,
+                pageParameter: pagination.pageParameter,
                 previous: pagination.previous,
                 next: pagination.next,
                 pageSizeControl: {action: path('spoke_admin_forms'), id: 'forms-page-size', name: 'page_size', value: pagination.pageSize, options: [25, 50, 100], hidden: []},

@@ -172,6 +172,22 @@ const initialiseSmtpPortDefaults = () => {
   });
 };
 
+const initialisePaginationControls = () => {
+  document.querySelectorAll('[data-pagination-page-size]').forEach((control) => {
+    if (!(control instanceof HTMLSelectElement) || !control.form) {
+      return;
+    }
+
+    control.addEventListener('change', () => {
+      if (typeof control.form.requestSubmit === 'function') {
+        control.form.requestSubmit();
+      } else {
+        control.form.submit();
+      }
+    });
+  });
+};
+
 const initialiseDiscoveryDialogs = () => {
   document.documentElement.classList.add('fv-js');
 
@@ -240,6 +256,7 @@ if (typeof document !== 'undefined') {
     initialiseTheme();
     initialiseSidebar();
     initialiseSmtpPortDefaults();
+    initialisePaginationControls();
     initialiseDiscoveryDialogs();
   });
 }
