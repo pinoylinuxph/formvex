@@ -74,6 +74,22 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Spoke\Migrations\Version000013CreateRetentionAndCleanup:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000014AddRetentionSuccessHeartbeat:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000015CreateStorageAllowanceAndExports:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000016CreateBackupInventory:
+        autowire: true
+        autoconfigure: true
+
     Formvex\Spoke\Domain\Branding\Contract\BrandingSettingsStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoBrandingSettingsStore
 
@@ -104,6 +120,46 @@ services:
 
     Formvex\Spoke\Domain\Delivery\Contract\WorkerHeartbeatStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoWorkerHeartbeatStore
+
+    Formvex\Spoke\Domain\Retention\Contract\RetentionRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoRetentionRepository
+
+    Formvex\Spoke\Domain\Scheduler\Contract\SchedulerHealthRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoSchedulerHealthRepository
+
+    Formvex\Spoke\Domain\Storage\Contract\StorageSettingsRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoStorageSettingsRepository
+
+    Formvex\Spoke\Domain\Storage\Contract\StorageUsageReader:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalStorageUsageReader
+
+    Formvex\Spoke\Domain\Storage\Contract\StorageCapacityGuard:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalStorageCapacityGuard
+
+    Formvex\Spoke\Domain\Storage\Contract\StorageExportRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoStorageExportRepository
+
+    Formvex\Spoke\Domain\Storage\Contract\SubmissionExportReader:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoSubmissionExportReader
+
+    Formvex\Spoke\Domain\Retention\Contract\RetentionLock:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalRetentionLock
+
+    Formvex\Spoke\Domain\Backup\Contract\BackupRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoBackupRepository
+
+    Formvex\Spoke\Domain\Backup\Contract\BackupArchiveStore:
+        alias: Formvex\Spoke\Infrastructure\Backup\ZipBackupArchiveStore
+
+    Formvex\Spoke\Domain\Backup\Contract\BackupOperationLock:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalBackupOperationLock
+
+    Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalRecoveryHoldStore
+
+    Formvex\Spoke\Infrastructure\Backup\ZipBackupArchiveStore:
+        arguments:
+            $publicRoot: '%kernel.project_dir%/public'
 
     Formvex\Spoke\Domain\Delivery\Contract\MailTransport:
         alias: Formvex\Spoke\Infrastructure\Mail\SymfonySmtpDeliveryTransport

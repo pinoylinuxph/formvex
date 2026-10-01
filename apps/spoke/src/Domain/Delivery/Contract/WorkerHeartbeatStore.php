@@ -11,4 +11,6 @@ use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
 interface WorkerHeartbeatStore
 {
     public function recordSuccess(PrivateStoragePaths $paths, DateTimeImmutable $now, DeliveryWorkerResult $result): void;
+
+    public function recordFailure(PrivateStoragePaths $paths, DateTimeImmutable $now, DeliveryWorkerResult $result): void;
 }

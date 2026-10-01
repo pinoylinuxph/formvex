@@ -4,16 +4,24 @@ declare(strict_types=1);
 
 namespace Formvex\Spoke\Admin\Portal;
 
+use DateTimeZone;
 use Formvex\Spoke\Admin\AuthenticationRequestResolver;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
+use Formvex\Spoke\Application\Backup\BackupService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
+use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
+use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
+use Formvex\Spoke\Domain\Installation\Contract\Clock;
+use Formvex\Spoke\Domain\Retention\Contract\RetentionRepository;
+use Formvex\Spoke\Domain\Scheduler\Contract\SchedulerHealthRepository;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Throwable;
 
 final class PortalShellController extends AbstractController
 {
@@ -26,6 +34,12 @@ final class PortalShellController extends AbstractController
         private readonly AuthenticationRequestResolver $requestResolver,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
         private readonly InstallationSettingsService $installationSettingsService,
+        private readonly SpokeStorageResolver $storageResolver,
+        private readonly RetentionRepository $retentionRepository,
+        private readonly SchedulerHealthRepository $schedulerHealthRepository,
+        private readonly Clock $clock,
+        private readonly BackupService $backupService,
+        private readonly RecoveryHoldStore $recoveryHoldStore,
     ) {
     }
 
@@ -106,6 +120,24 @@ final class PortalShellController extends AbstractController
         $csrfToken = $this->csrfToken($request, $sessionId);
         $theme = PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE));
         $sidebarState = PortalPreferences::sidebarState($request->cookies->get(PortalPreferences::SIDEBAR_COOKIE));
+        $settingsSnapshot = $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+        $paths = $this->storageResolver->resolve($this->runtimeConfiguration->applicationRoot);
+        $retentionStatus = $this->retentionRepository->status($paths);
+        $schedulerHealth = $this->schedulerHealthRepository->status($paths, $this->clock->now()->setTimezone(new DateTimeZone('UTC')));
+        $backupArchives = [];
+        $backupError = null;
+        $recoveryHold = null;
+        if ($destination === 'maintenance') {
+            try {
+                $backupArchives = $this->backupService->list($this->runtimeConfiguration->applicationRoot);
+                $recoveryHold = $this->recoveryHoldStore->current($paths);
+            } catch (Throwable) {
+                $backupError = 'Backup inventory is unavailable until the backup migration and private storage are ready.';
+            }
+        }
+        $backupPagination = PaginationView::fromRequest($request, $backupArchives, 'backup_page', 'backup_page_size');
+        $notice = $request->query->getString('notice');
+        $error = $request->query->getString('error');
         $response = $this->render('administration/portal.html.twig', [
             'csrfToken' => $csrfToken,
             'currentRoute' => $route,
@@ -114,10 +146,20 @@ final class PortalShellController extends AbstractController
             'pageDescription' => $definition['description'],
             'theme' => $theme,
             'sidebarState' => $sidebarState,
-            'websiteName' => $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot)->settings->websiteDisplayName,
+            'websiteName' => $settingsSnapshot->settings->websiteDisplayName,
             'administratorName' => 'admin',
             'navItems' => array_values(PortalNavigation::destinations()),
             'isOverview' => $destination === 'overview',
+            'retentionStatus' => $retentionStatus,
+            'retentionSettings' => $settingsSnapshot->settings,
+            'schedulerHealth' => $schedulerHealth,
+            'deliverySchedulerJob' => $schedulerHealth->job('delivery'),
+            'retentionSchedulerJob' => $schedulerHealth->job('retention'),
+            'backupPagination' => $backupPagination,
+            'backupError' => $backupError,
+            'recoveryHold' => $recoveryHold,
+            'notice' => $notice !== '' ? $notice : ($error !== '' ? $error : null),
+            'noticeVariant' => $error !== '' ? 'danger' : 'information',
         ]);
 
         if ($request->cookies->get(self::CSRF_COOKIE) !== $csrfToken) {

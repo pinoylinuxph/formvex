@@ -25,6 +25,7 @@ final class LocalPrivateStorage implements PrivateStorage
         'backups',
         'backups/scheduled',
         'backups/manual',
+        'backups/pre-upgrade',
         'backups/temporary',
         'runtime',
     ];
@@ -99,12 +100,18 @@ final class LocalPrivateStorage implements PrivateStorage
             $applicationRoot . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR . 'manual',
             $applicationRoot . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR . 'temporary',
             $applicationRoot . DIRECTORY_SEPARATOR . 'runtime',
+            $applicationRoot . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR . 'pre-upgrade',
         );
     }
 
     public function acquireLock(PrivateStoragePaths $paths): StorageLock
     {
-        $handle = fopen($paths->lockFile(), 'c+');
+        return $this->acquireFileLock($paths->lockFile());
+    }
+
+    private function acquireFileLock(string $lockFile): StorageLock
+    {
+        $handle = fopen($lockFile, 'c+');
 
         if ($handle === false || !flock($handle, LOCK_EX | LOCK_NB)) {
             if (is_resource($handle)) {
@@ -114,9 +121,9 @@ final class LocalPrivateStorage implements PrivateStorage
             throw new InstallationFailure('installation_in_progress');
         }
 
-        chmod($paths->lockFile(), 0o600);
+        chmod($lockFile, 0o600);
 
-        return new LocalStorageLock($handle, $paths->lockFile());
+        return new LocalStorageLock($handle, $lockFile);
     }
 
     public function readMarker(PrivateStoragePaths $paths): ?InstallationMarker

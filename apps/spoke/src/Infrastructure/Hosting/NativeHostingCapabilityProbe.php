@@ -20,6 +20,7 @@ final class NativeHostingCapabilityProbe implements HostingCapabilityProbe
         'openssl',
         'curl',
         'sodium',
+        'zip',
     ];
 
     public function check(InstallationConfiguration $configuration): array

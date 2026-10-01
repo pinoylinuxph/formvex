@@ -17,6 +17,7 @@ final readonly class PrivateStoragePaths
         public string $manualBackups,
         public string $temporaryBackups,
         public string $runtime,
+        public string $preUpgradeBackups = '',
     ) {
     }
 
@@ -33,5 +34,25 @@ final readonly class PrivateStoragePaths
     public function lockFile(): string
     {
         return $this->runtime . DIRECTORY_SEPARATOR . 'installation.lock';
+    }
+
+    public function retentionLockFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'retention.lock';
+    }
+
+    public function backupLockFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'backup.lock';
+    }
+
+    public function restoreLockFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'restore.lock';
+    }
+
+    public function recoveryHoldFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'recovery-hold.json';
     }
 }

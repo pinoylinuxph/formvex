@@ -20,6 +20,7 @@ use Formvex\Spoke\Domain\Installation\Contract\Clock;
 use Formvex\Spoke\Domain\Installation\Contract\IdentifierGenerator;
 use Formvex\Spoke\Domain\InstallationSettings\Contract\InstallationSettingsStore;
 use Formvex\Spoke\Domain\InstallationSettings\InstallationSettings;
+use Formvex\Spoke\Domain\Storage\Contract\StorageCapacityGuard;
 use Formvex\Spoke\Domain\Submission\Contract\SubmissionStore;
 use Formvex\Spoke\Domain\Submission\Exception\SubmissionFailure;
 use Formvex\Spoke\Domain\Submission\SubmissionAccepted;
@@ -36,6 +37,7 @@ final readonly class SubmissionService
         private Clock $clock,
         private ?SubmissionAbuseService $abuseService = null,
         private ?InstallationSettingsStore $settingsStore = null,
+        private ?StorageCapacityGuard $capacityGuard = null,
     ) {
     }
 
@@ -82,6 +84,10 @@ final readonly class SubmissionService
             if ($deferredAttemptFailure === null) {
                 $this->abuseService->assertAttemptAllowed($applicationRoot, $clientIp, $publicFormId);
             }
+        }
+
+        if ($this->capacityGuard !== null && !$this->capacityGuard->evaluate($paths)->allowed) {
+            throw new SubmissionFailure('storage_unavailable', 'Your message could not be accepted because local storage is full or temporarily unavailable. Please try again later.');
         }
 
         $validatedFields = $this->validateFields($configuration, $request);

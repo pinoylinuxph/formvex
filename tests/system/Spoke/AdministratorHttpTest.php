@@ -155,6 +155,16 @@ final class AdministratorHttpTest extends KernelTestCase
             self::assertStringNotContainsString('fv-nav-mark', $response->getContent(), $destination);
         }
 
+        $diagnostics = $this->request('GET', '/formvex/diagnostics', [], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+        self::assertStringContainsString('Scheduler health', (string) $diagnostics->getContent());
+        self::assertStringContainsString('Delivery worker', (string) $diagnostics->getContent());
+        self::assertStringContainsString('Retention cleanup', (string) $diagnostics->getContent());
+        self::assertStringContainsString('Not Confirmed', (string) $diagnostics->getContent());
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $diagnostics->getContent());
+
         $darkPreference = $this->request(
             'POST',
             '/formvex/preferences/theme',
@@ -279,6 +289,74 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertSame(Response::HTTP_OK, $saved->getStatusCode());
         self::assertStringContainsString('The identity settings were saved successfully.', $saved->getContent());
         self::assertStringContainsString('Logoslab Production', $saved->getContent());
+    }
+
+    public function testStorageSettingsAreGroupedValidatedAndPersisted(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $cookies = ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf];
+
+        $storage = $this->request('GET', '/formvex/settings?tab=storage', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $storage->getStatusCode());
+        self::assertStringContainsString('Set the live-data allowance', (string) $storage->getContent());
+        self::assertStringContainsString('value="2"', (string) $storage->getContent());
+        self::assertStringContainsString('Storage status: Normal', (string) $storage->getContent());
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $storage->getContent());
+
+        $invalid = $this->request('POST', '/formvex/settings/storage?tab=storage', [
+            '_token' => $csrf,
+            'storage_allowance_gb' => '11',
+            'storage_normal_warning_percent' => '90',
+            'storage_critical_warning_percent' => '80',
+        ], $cookies);
+        self::assertSame(Response::HTTP_OK, $invalid->getStatusCode());
+        self::assertStringContainsString('between 1 GB and 10 GB', (string) $invalid->getContent());
+
+        $saved = $this->request('POST', '/formvex/settings/storage?tab=storage', [
+            '_token' => $csrf,
+            'storage_allowance_gb' => '3',
+            'storage_normal_warning_percent' => '70',
+            'storage_critical_warning_percent' => '95',
+        ], $cookies);
+        self::assertSame(Response::HTTP_OK, $saved->getStatusCode());
+        self::assertStringContainsString('Storage settings were saved successfully.', (string) $saved->getContent());
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        self::assertSame(3000000000, (int) $connection->query('SELECT allowance_bytes FROM storage_settings')->fetchColumn());
+        self::assertSame(1, (int) $connection->query("SELECT COUNT(*) FROM audit_events WHERE event_name = 'spoke.settings.storage_saved'")->fetchColumn());
+    }
+
+    public function testSubmissionExportPreservesFiltersAndRequiresAuthenticatedDownload(): void
+    {
+        $this->seedSubmission();
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $cookies = ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf];
+
+        $export = $this->request('POST', '/formvex/submissions/export', [
+            '_token' => $csrf,
+            'record_type' => 'visitor',
+            'classification' => 'normal',
+            'sort' => 'oldest',
+        ], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $export->getStatusCode());
+        $location = (string) $export->headers->get('Location');
+        self::assertStringContainsString('classification=normal', $location);
+        self::assertStringContainsString('sort=oldest', $location);
+        preg_match('/export_id=([0-9a-f-]+)/', $location, $matches);
+        $exportId = $matches[1] ?? '';
+        self::assertNotSame('', $exportId);
+
+        $unauthenticated = $this->request('GET', '/formvex/exports/' . $exportId . '/download');
+        self::assertSame(Response::HTTP_FOUND, $unauthenticated->getStatusCode());
+        self::assertSame('/formvex/login', $unauthenticated->headers->get('Location'));
+
+        $download = $this->request('GET', '/formvex/exports/' . $exportId . '/download', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $download->getStatusCode());
+        self::assertSame('text/csv; charset=UTF-8', $download->headers->get('Content-Type'));
+        self::assertSame('no-store, private', $download->headers->get('Cache-Control'));
+        $csv = (string) file_get_contents($download->getFile()->getPathname());
+        self::assertStringContainsString('"Accepted time",Form,"Configuration version"', $csv);
+        self::assertStringNotContainsString('owner@example.com', $csv);
+        self::assertStringContainsString('<script>alert(1)</script>', $csv);
     }
 
     public function testSubmissionReviewIsAuthenticatedBoundedAndEscapesStoredValues(): void
@@ -428,6 +506,55 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertStringContainsString('Sign in to Acme Portal', (string) $login->getContent());
         self::assertStringContainsString('Reliable forms for every team', (string) $login->getContent());
         self::assertStringNotContainsString('Sign in to Formvex', (string) $login->getContent());
+    }
+
+    public function testMaintenanceCreatesDisplaysAndPermanentlyDeletesPrivateBackup(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $cookies = ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf];
+
+        $maintenance = $this->request('GET', '/formvex/maintenance', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $maintenance->getStatusCode());
+        self::assertStringContainsString('Create manual backup', (string) $maintenance->getContent());
+        self::assertStringContainsString('Create pre-upgrade backup', (string) $maintenance->getContent());
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $maintenance->getContent());
+
+        $created = $this->request('POST', '/formvex/maintenance/backups', [
+            '_token' => $csrf,
+            'kind' => 'manual',
+        ], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $created->getStatusCode());
+        self::assertStringContainsString('notice=', (string) $created->headers->get('Location'));
+
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        $archive = $connection->query("SELECT public_id, storage_key, status FROM backup_archives WHERE kind = 'manual' ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+        self::assertIsArray($archive);
+        self::assertSame('verified', $archive['status']);
+        self::assertIsString($archive['public_id']);
+        self::assertIsString($archive['storage_key']);
+        $archivePath = $this->temporaryRoot . '/formvex/backups/' . str_replace('/', DIRECTORY_SEPARATOR, $archive['storage_key']);
+        self::assertFileExists($archivePath);
+
+        $inventory = $this->request('GET', '/formvex/maintenance', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $inventory->getStatusCode());
+        self::assertStringContainsString($archive['public_id'], (string) $inventory->getContent());
+        self::assertStringContainsString('Verified', (string) $inventory->getContent());
+
+        $missingConfirmation = $this->request('POST', '/formvex/maintenance/backups/' . $archive['public_id'] . '/delete', [
+            '_token' => $csrf,
+        ], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $missingConfirmation->getStatusCode());
+        self::assertFileExists($archivePath);
+
+        $deleted = $this->request('POST', '/formvex/maintenance/backups/' . $archive['public_id'] . '/delete', [
+            '_token' => $csrf,
+            'confirm_permanent' => '1',
+        ], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $deleted->getStatusCode());
+        $remaining = $connection->prepare('SELECT public_id FROM backup_archives WHERE public_id = :public_id');
+        $remaining->execute(['public_id' => $archive['public_id']]);
+        self::assertFalse($remaining->fetchColumn());
+        self::assertFileDoesNotExist($archivePath);
     }
 
     /**

@@ -25,6 +25,9 @@ final readonly class InstallationSettings
         public string $smtpSecretSlot,
         public int $discoveryPayloadLimitBytes = 131072,
         public int $smtpAttemptsPerMinute = 10,
+        public int $ordinaryRetentionDays = 30,
+        public int $uncertainRetentionDays = 90,
+        public int $auditRetentionDays = 30,
     ) {
         if ($this->discoveryPayloadLimitBytes < 131072 || $this->discoveryPayloadLimitBytes > 1048576) {
             throw new InstallationSettingsFailure('discovery_payload_limit_invalid', 'The discovery payload limit must be between 128 KiB and 1,024 KiB.');
@@ -32,6 +35,16 @@ final readonly class InstallationSettings
 
         if ($this->smtpAttemptsPerMinute < 1 || $this->smtpAttemptsPerMinute > 60) {
             throw new InstallationSettingsFailure('smtp_pacing_invalid', 'The SMTP attempt limit must be between 1 and 60 attempts per minute.');
+        }
+
+        foreach ([
+            'ordinary_retention_days' => $this->ordinaryRetentionDays,
+            'uncertain_retention_days' => $this->uncertainRetentionDays,
+            'audit_retention_days' => $this->auditRetentionDays,
+        ] as $field => $days) {
+            if ($days < 1 || $days > 365) {
+                throw new InstallationSettingsFailure('retention_days_invalid', 'Retention periods must be between 1 and 365 days.', [$field => 'Enter a value from 1 to 365 days.']);
+            }
         }
     }
 
@@ -54,6 +67,9 @@ final readonly class InstallationSettings
             'a',
             131072,
             10,
+            30,
+            90,
+            30,
         );
     }
 
@@ -80,6 +96,9 @@ final readonly class InstallationSettings
             $this->smtpSecretSlot,
             $this->discoveryPayloadLimitBytes,
             $this->smtpAttemptsPerMinute,
+            $this->ordinaryRetentionDays,
+            $this->uncertainRetentionDays,
+            $this->auditRetentionDays,
         );
     }
 
@@ -110,6 +129,9 @@ final readonly class InstallationSettings
             $smtpSecretSlot,
             $this->discoveryPayloadLimitBytes,
             $this->smtpAttemptsPerMinute,
+            $this->ordinaryRetentionDays,
+            $this->uncertainRetentionDays,
+            $this->auditRetentionDays,
         );
     }
 
@@ -132,6 +154,9 @@ final readonly class InstallationSettings
             $this->smtpSecretSlot,
             $this->discoveryPayloadLimitBytes,
             $this->smtpAttemptsPerMinute,
+            $this->ordinaryRetentionDays,
+            $this->uncertainRetentionDays,
+            $this->auditRetentionDays,
         );
     }
 
@@ -154,6 +179,9 @@ final readonly class InstallationSettings
             $this->smtpSecretSlot,
             $bytes,
             $this->smtpAttemptsPerMinute,
+            $this->ordinaryRetentionDays,
+            $this->uncertainRetentionDays,
+            $this->auditRetentionDays,
         );
     }
 
@@ -176,6 +204,34 @@ final readonly class InstallationSettings
             $this->smtpSecretSlot,
             $this->discoveryPayloadLimitBytes,
             $attemptsPerMinute,
+            $this->ordinaryRetentionDays,
+            $this->uncertainRetentionDays,
+            $this->auditRetentionDays,
+        );
+    }
+
+    public function withRetention(int $ordinaryRetentionDays, int $uncertainRetentionDays, int $auditRetentionDays): self
+    {
+        return new self(
+            $this->websiteDisplayName,
+            $this->bareDomain,
+            $this->wwwAlias,
+            $this->operationalAlertEmail,
+            $this->senderEmail,
+            $this->senderName,
+            $this->smtpHost,
+            $this->smtpPort,
+            $this->smtpEncryption,
+            $this->smtpUsername,
+            $this->smtpTimeoutSeconds,
+            $this->loginThrottle,
+            $this->smtpConfigurationRevision,
+            $this->smtpSecretSlot,
+            $this->discoveryPayloadLimitBytes,
+            $this->smtpAttemptsPerMinute,
+            $ordinaryRetentionDays,
+            $uncertainRetentionDays,
+            $auditRetentionDays,
         );
     }
 }

@@ -10,6 +10,7 @@ use Formvex\Core\Delivery\DeliveryMessageComposer;
 use Formvex\Core\Delivery\DeliveryOutcomeType;
 use Formvex\Core\Delivery\DeliveryRetryPolicy;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
+use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
 use Formvex\Spoke\Domain\Delivery\ClaimedDeliveryJob;
 use Formvex\Spoke\Domain\Delivery\ClaimedOperationalAlert;
 use Formvex\Spoke\Domain\Delivery\Contract\DeliveryJobRepository;
@@ -40,6 +41,7 @@ final readonly class RunDeliveryWorkerHandler
         private DeliveryRetryPolicy $retryPolicy,
         private Clock $clock,
         private ?WorkerHeartbeatStore $heartbeat = null,
+        private ?RecoveryHoldStore $recoveryHoldStore = null,
     ) {
     }
 
@@ -47,9 +49,13 @@ final readonly class RunDeliveryWorkerHandler
     {
         $claimed = $sent = $retried = $failed = $uncertain = $deferred = 0;
         $limit = max(1, min(self::MAX_BATCH, $command->batchLimit));
+        $paths = null;
 
         try {
             $paths = $this->storageResolver->resolve($this->runtimeConfiguration->applicationRoot);
+            if ($this->recoveryHoldStore?->current($paths) !== null) {
+                return new DeliveryWorkerResult(0, 0, 0, 0, 0, 1, false);
+            }
             $settings = $this->settingsStore->get($paths);
 
             $alertPending = $this->alerts->hasDueAlert($paths, $this->clock->now());
@@ -130,7 +136,16 @@ final readonly class RunDeliveryWorkerHandler
 
             return $result;
         } catch (Throwable) {
-            return new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred, false);
+            $result = new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred, false);
+            if ($paths !== null) {
+                try {
+                    $this->heartbeat?->recordFailure($paths, $this->clock->now(), $result);
+                } catch (Throwable) {
+                    // The original worker failure remains the authoritative result.
+                }
+            }
+
+            return $result;
         }
     }
 

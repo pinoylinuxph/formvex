@@ -9,16 +9,19 @@ use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\FormConfiguration\FormConfigurationService;
+use Formvex\Spoke\Application\Storage\StorageExportService;
 use Formvex\Spoke\Application\SubmissionReview\SubmissionReviewService;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Administration\SessionRecord;
 use Formvex\Spoke\Domain\FormConfiguration\Exception\FormConfigurationFailure;
+use Formvex\Spoke\Domain\Storage\StorageExportFailure;
 use Formvex\Spoke\Domain\SubmissionReview\SubmissionReviewAction;
 use Formvex\Spoke\Domain\SubmissionReview\SubmissionReviewFailure;
 use Formvex\Spoke\Domain\SubmissionReview\SubmissionReviewQuery;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
 use Formvex\Spoke\Infrastructure\Security\AdminActionTokenManager;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -35,6 +38,7 @@ final class SubmissionReviewController extends AbstractController
         private readonly SubmissionReviewService $reviewService,
         private readonly FormConfigurationService $formConfigurationService,
         private readonly AdminActionTokenManager $actionTokenManager,
+        private readonly StorageExportService $storageExportService,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
     ) {
     }
@@ -62,6 +66,8 @@ final class SubmissionReviewController extends AbstractController
                 'queryString' => $this->queryString($query),
                 'pagination' => $this->pagination($query, $result->pageCount, $result->total),
                 'pageSizeControl' => $this->pageSizeControl($query),
+                'exportParameters' => $this->exportParameters($query),
+                'exportId' => $this->exportId($request->query->get('export_id')),
                 'message' => $query->errors === [] ? $this->notice($request->query->get('notice')) : implode(' ', $query->errors),
                 'messageVariant' => $query->errors === [] ? 'information' : 'warning',
                 'messageTitle' => $query->errors === [] ? 'Submission review' : 'Filter corrected',
@@ -77,6 +83,64 @@ final class SubmissionReviewController extends AbstractController
                 'messageVariant' => 'danger',
                 'messageTitle' => 'Submissions could not be loaded',
             ], Response::HTTP_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    #[Route('/formvex/submissions/export', name: 'spoke_admin_submissions_export', methods: ['POST'])]
+    public function export(Request $request): Response
+    {
+        $context = $this->context($request);
+        if ($context === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($context->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        try {
+            $token = $request->request->getString('_token');
+            if (!$this->administratorService->csrfTokenMatches($context, $token)) {
+                throw new AdministratorFailure('csrf_invalid');
+            }
+            $query = $this->exportQuery($request);
+            if ($query->errors !== []) {
+                throw new StorageExportFailure('export_request_invalid', implode(' ', $query->errors));
+            }
+            $export = $this->storageExportService->generate($this->runtimeConfiguration->applicationRoot, $query);
+            $parameters = array_merge($query->toQuery(), ['export_id' => $export->publicId]);
+
+            return $this->redirectToRoute('spoke_admin_submissions', $parameters);
+        } catch (AdministratorFailure) {
+            return $this->redirectToRoute('spoke_admin_submissions', ['notice' => 'security']);
+        } catch (StorageExportFailure $failure) {
+            return $this->redirectToRoute('spoke_admin_submissions', ['notice' => $failure->failureCode]);
+        }
+    }
+
+    #[Route('/formvex/exports/{exportId}/download', name: 'spoke_admin_export_download', methods: ['GET'])]
+    public function downloadExport(Request $request, string $exportId): Response
+    {
+        $context = $this->context($request);
+        if ($context === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($context->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        try {
+            $file = $this->storageExportService->download($this->runtimeConfiguration->applicationRoot, $exportId);
+            $response = new BinaryFileResponse($file);
+            $response->headers->set('Content-Type', 'text/csv; charset=UTF-8');
+            $response->headers->set('Content-Disposition', 'attachment; filename="submissions-' . $exportId . '.csv"');
+            $response->headers->set('Cache-Control', 'no-store, private');
+            $response->headers->set('X-Content-Type-Options', 'nosniff');
+
+            return $response;
+        } catch (StorageExportFailure $failure) {
+            $status = $failure->failureCode === 'export_not_available' ? Response::HTTP_NOT_FOUND : Response::HTTP_SERVICE_UNAVAILABLE;
+
+            return new Response($failure->getMessage(), $status, ['Cache-Control' => 'no-store, private']);
         }
     }
 
@@ -241,6 +305,39 @@ final class SubmissionReviewController extends AbstractController
         return http_build_query($query->toQuery(), '', '&', PHP_QUERY_RFC3986);
     }
 
+    /** @return list<array{name: string, value: string}> */
+    private function exportParameters(SubmissionReviewQuery $query): array
+    {
+        $parameters = [];
+        foreach ($query->toQuery() as $name => $value) {
+            $parameters[] = ['name' => $name, 'value' => $value];
+        }
+
+        return $parameters;
+    }
+
+    private function exportId(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/\A[0-9a-fA-F-]{16,80}\z/', $value) === 1 ? $value : null;
+    }
+
+    private function exportQuery(Request $request): SubmissionReviewQuery
+    {
+        $allowed = ['form', 'classification', 'lifecycle', 'delivery', 'record_type', 'sort'];
+        $input = [];
+        foreach ($request->request->all() as $key => $value) {
+            if ($key === '_token') {
+                continue;
+            }
+            if (!in_array($key, $allowed, true) || !is_string($value)) {
+                throw new StorageExportFailure('export_request_invalid', 'The export request contained an unsupported filter. Reload Submissions and try again.');
+            }
+            $input[$key] = $value;
+        }
+
+        return SubmissionReviewQuery::fromInput($input);
+    }
+
     /** @return array{action: string, id: string, name: string, label: string, value: int, options: list<int>, hidden: list<array{name: string, value: string}>} */
     private function pageSizeControl(SubmissionReviewQuery $query): array
     {
@@ -347,6 +444,11 @@ final class SubmissionReviewController extends AbstractController
             'security' => 'The security request could not be verified. Reload the page and try again.',
             'action_failed' => 'The action could not be completed. Review the current record state and try again.',
             'not_found' => 'The requested submission could not be found. It may have been removed or is no longer available.',
+            'export_in_progress' => 'An export is already available for download. Download it or wait for it to expire before creating another export.',
+            'export_limit_reached' => 'The selected result contains more than 10,000 records. Add filters and try the export again.',
+            'storage_unavailable' => 'The CSV export could not be created because private storage is full or temporarily unavailable. Existing records were not changed.',
+            'export_failed' => 'The CSV export could not be created. Existing submissions were not changed.',
+            'export_request_invalid' => 'The export request contained an invalid or unsupported filter. Reload Submissions and try again.',
             default => null,
         };
     }

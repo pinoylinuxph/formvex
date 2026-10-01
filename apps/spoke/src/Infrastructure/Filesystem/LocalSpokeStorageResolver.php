@@ -21,6 +21,7 @@ final class LocalSpokeStorageResolver implements SpokeStorageResolver
         'diagnostics',
         'backups/scheduled',
         'backups/manual',
+        'backups/pre-upgrade',
         'backups/temporary',
         'runtime',
     ];
@@ -64,6 +65,7 @@ final class LocalSpokeStorageResolver implements SpokeStorageResolver
             $root . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR . 'manual',
             $root . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR . 'temporary',
             $root . DIRECTORY_SEPARATOR . 'runtime',
+            $root . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR . 'pre-upgrade',
         );
     }
 

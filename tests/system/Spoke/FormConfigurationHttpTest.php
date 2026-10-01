@@ -389,7 +389,7 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertSame(1, (int) $connection->query('SELECT COUNT(*) FROM delivery_jobs')->fetchColumn());
     }
 
-    public function testPublicSubmissionMapsStorageFailureToSafe503Response(): void
+    public function testPublicSubmissionMapsStorageFailureToSafe507Response(): void
     {
         $publicFormId = $this->createActiveSubmissionForm();
         $store = self::createMock(SubmissionStore::class);
@@ -405,7 +405,7 @@ final class FormConfigurationHttpTest extends KernelTestCase
         ]);
         $body = json_decode((string) $response->getContent(), true, 4, JSON_THROW_ON_ERROR);
 
-        self::assertSame(Response::HTTP_SERVICE_UNAVAILABLE, $response->getStatusCode());
+        self::assertSame(Response::HTTP_INSUFFICIENT_STORAGE, $response->getStatusCode());
         self::assertSame('storage_unavailable', $body['error']['code']);
         self::assertStringContainsString('not accepted', $body['error']['message']);
         self::assertNotSame('', $body['request_id']);

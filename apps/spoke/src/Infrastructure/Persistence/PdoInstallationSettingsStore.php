@@ -52,6 +52,9 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 $this->stringValue($row, 'smtp_secret_slot'),
                 $this->integerValue($row, 'discovery_payload_limit_bytes'),
                 $this->integerValue($row, 'smtp_attempts_per_minute', 10),
+                $this->integerValue($row, 'ordinary_retention_days', 30),
+                $this->integerValue($row, 'uncertain_retention_days', 90),
+                $this->integerValue($row, 'audit_retention_days', 30),
             );
         } catch (InstallationSettingsFailure $failure) {
             throw $failure;
@@ -67,6 +70,17 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
         try {
             $connection->beginTransaction();
             $pacingColumn = $this->hasColumn($connection, 'installation_settings', 'smtp_attempts_per_minute');
+            $retentionColumns = [
+                'ordinary_retention_days' => $this->hasColumn($connection, 'installation_settings', 'ordinary_retention_days'),
+                'uncertain_retention_days' => $this->hasColumn($connection, 'installation_settings', 'uncertain_retention_days'),
+                'audit_retention_days' => $this->hasColumn($connection, 'installation_settings', 'audit_retention_days'),
+            ];
+            $retentionSql = '';
+            foreach ($retentionColumns as $column => $available) {
+                if ($available) {
+                    $retentionSql .= ', ' . $column . ' = :' . $column;
+                }
+            }
             $sql = 'UPDATE installation_settings SET website_display_name = :website_display_name, '
                 . 'bare_domain = :bare_domain, www_alias = :www_alias, '
                 . 'operational_alert_email = :operational_alert_email, sender_email = :sender_email, '
@@ -75,7 +89,7 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 . 'smtp_timeout_seconds = :smtp_timeout_seconds, maximum_login_failures = :maximum_login_failures, '
                 . 'login_window_minutes = :login_window_minutes, login_cooldown_minutes = :login_cooldown_minutes, '
                 . 'smtp_configuration_revision = :smtp_configuration_revision, smtp_secret_slot = :smtp_secret_slot, '
-                . 'discovery_payload_limit_bytes = :discovery_payload_limit_bytes' . ($pacingColumn ? ', smtp_attempts_per_minute = :smtp_attempts_per_minute' : '') . ', '
+                . 'discovery_payload_limit_bytes = :discovery_payload_limit_bytes' . ($pacingColumn ? ', smtp_attempts_per_minute = :smtp_attempts_per_minute' : '') . $retentionSql . ', '
                 . 'updated_at = :updated_at WHERE singleton_id = 1';
             $parameters = [
                 'website_display_name' => $settings->websiteDisplayName,
@@ -95,10 +109,18 @@ final class PdoInstallationSettingsStore implements InstallationSettingsStore
                 'smtp_configuration_revision' => $settings->smtpConfigurationRevision,
                 'smtp_secret_slot' => $settings->smtpSecretSlot,
                 'discovery_payload_limit_bytes' => $settings->discoveryPayloadLimitBytes,
+                'ordinary_retention_days' => $settings->ordinaryRetentionDays,
+                'uncertain_retention_days' => $settings->uncertainRetentionDays,
+                'audit_retention_days' => $settings->auditRetentionDays,
                 'updated_at' => $this->formatTimestamp($now),
             ];
             if ($pacingColumn) {
                 $parameters['smtp_attempts_per_minute'] = $settings->smtpAttemptsPerMinute;
+            }
+            foreach ($retentionColumns as $column => $available) {
+                if (!$available) {
+                    unset($parameters[$column]);
+                }
             }
             $statement = $connection->prepare($sql);
             $statement->execute($parameters);

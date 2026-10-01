@@ -18,8 +18,8 @@
     } only %}
 
     {% include '@platform_ui/components/feedback.html.twig' with {
-        message: null,
-        variant: 'information',
+        message: notice,
+        variant: noticeVariant,
     } only %}
 
     {% if isOverview %}
@@ -44,6 +44,180 @@
             <p class="fv-eyebrow">Implementation status</p>
             <h2 id="overview-next-heading">Feature data will appear here</h2>
             <p>The navigation and shared interface foundations are in place. Later units will connect forms, submissions, delivery, diagnostics, maintenance, and settings to their authoritative data.</p>
+        </section>
+    {% elseif destination == 'diagnostics' %}
+        {% if schedulerHealth.status != 'healthy' %}
+            <div class="fv-alert fv-alert-{{ schedulerHealth.severity }}" role="alert">
+                <strong>Scheduler attention required.</strong>
+                <span>{{ schedulerHealth.message }}</span>
+            </div>
+        {% else %}
+            <div class="fv-alert fv-alert-success" role="status">
+                <strong>All scheduled tasks are healthy.</strong>
+                <span>{{ schedulerHealth.message }}</span>
+            </div>
+        {% endif %}
+
+        <section class="fv-panel" aria-labelledby="scheduler-health-heading">
+            <header class="fv-section-heading fv-section-heading-inline">
+                <div>
+                    <p class="fv-eyebrow">Background execution</p>
+                    <h2 id="scheduler-health-heading">Scheduler health</h2>
+                    <p>Each task reports its own result from the local hosting scheduler. The page cannot inspect cPanel or operating-system cron configuration directly.</p>
+                </div>
+                <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_diagnostics') }}">Refresh status</a>
+            </header>
+
+            <div class="fv-table-container" tabindex="0" aria-label="Scheduler health table">
+                <table class="fv-table fv-scheduler-table">
+                    <caption class="fv-visually-hidden">Scheduled task health</caption>
+                    <thead>
+                    <tr>
+                        <th scope="col">Job</th>
+                        <th scope="col">Schedule</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Last successful run</th>
+                        <th scope="col">Latest attempt</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for job in schedulerHealth.jobs %}
+                        <tr>
+                            <th scope="row">
+                                <button class="fv-table-row-trigger" type="button" data-discovery-dialog-open="scheduler-dialog-{{ job.key }}" aria-haspopup="dialog">
+                                    {{ job.label }}
+                                </button>
+                                <span class="fv-table-cell-note">{{ job.description|default('Scheduled local task') }}</span>
+                            </th>
+                            <td>{{ job.schedule }}</td>
+                            <td><span class="fv-status-badge fv-status-badge-{{ job.severity }}">{{ job.status|replace({'_': ' '})|title }}</span></td>
+                            <td>{% if job.lastSuccessfulAt %}<time datetime="{{ job.lastSuccessfulAt }}">{{ job.lastSuccessfulAt|date('Y-m-d H:i:s T') }}</time>{% else %}Never{% endif %}</td>
+                            <td>{% if job.lastAttemptAt %}<time datetime="{{ job.lastAttemptAt }}">{{ job.lastAttemptAt|date('Y-m-d H:i:s T') }}</time>{% else %}Not run{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {% for job in schedulerHealth.jobs %}
+            <section class="fv-modal fv-discovery-dialog fv-scheduler-dialog" id="scheduler-dialog-{{ job.key }}" role="dialog" aria-modal="true" aria-labelledby="scheduler-dialog-{{ job.key }}-heading" data-discovery-dialog>
+                <div class="fv-modal-panel">
+                    <header class="fv-modal-header">
+                        <div>
+                            <p class="fv-eyebrow">Scheduled task</p>
+                            <h2 id="scheduler-dialog-{{ job.key }}-heading">{{ job.label }}</h2>
+                        </div>
+                        <button class="fv-icon-button" type="button" data-modal-close aria-label="Close scheduler details">×</button>
+                    </header>
+                    <div class="fv-modal-body">
+                        <p class="fv-modal-description">{{ job.description|default('Scheduled local task') }}</p>
+                        <dl class="fv-detail-list">
+                            <div><dt>Status</dt><dd><span class="fv-status-badge fv-status-badge-{{ job.severity }}">{{ job.status|replace({'_': ' '})|title }}</span></dd></div>
+                            <div><dt>Expected schedule</dt><dd>{{ job.schedule }}</dd></div>
+                            <div><dt>Last successful run</dt><dd>{% if job.lastSuccessfulAt %}<time datetime="{{ job.lastSuccessfulAt }}">{{ job.lastSuccessfulAt|date('Y-m-d H:i:s T') }}</time>{% else %}Never recorded{% endif %}</dd></div>
+                            <div><dt>Latest attempt</dt><dd>{% if job.lastAttemptAt %}<time datetime="{{ job.lastAttemptAt }}">{{ job.lastAttemptAt|date('Y-m-d H:i:s T') }}</time>{% else %}Not recorded{% endif %}</dd></div>
+                        </dl>
+                        <div class="fv-detail-callout">
+                            <strong>What to do</strong>
+                            <p>{{ job.action }}</p>
+                            <p>Scheduled command: <code>{{ job.command }}</code></p>
+                        </div>
+                    </div>
+                    <footer class="fv-modal-footer">
+                        <button class="fv-button fv-button-secondary" type="button" data-modal-close>Done reviewing</button>
+                    </footer>
+                </div>
+            </section>
+        {% endfor %}
+    {% elseif destination == 'maintenance' %}
+        {% if recoveryHold %}
+            <div class="fv-alert fv-alert-danger" role="alert"><strong>Recovery hold is active.</strong><span>The installation is unavailable while the hosting administrator completes or repairs a server-side restore. Portal backup actions are paused.</span></div>
+        {% endif %}
+        <section class="fv-panel" aria-labelledby="backup-actions-heading">
+            <header class="fv-section-heading">
+                <p class="fv-eyebrow">Private recovery package</p>
+                <h2 id="backup-actions-heading">Backups</h2>
+                <p>Create a plain ZIP backup for local recovery or before an upgrade. Archives remain private and are never rotated automatically.</p>
+            </header>
+            {% if backupError %}<div class="fv-alert fv-alert-warning" role="status"><strong>Backup inventory unavailable.</strong><span>{{ backupError }}</span></div>{% endif %}
+            <div class="fv-actions">
+                <form method="post" action="{{ path('spoke_admin_backup_create') }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}">
+                    <input type="hidden" name="kind" value="manual">
+                    <button class="fv-button fv-button-primary" type="submit"{% if recoveryHold %} disabled{% endif %}>Create manual backup</button>
+                </form>
+                <form method="post" action="{{ path('spoke_admin_backup_create') }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}">
+                    <input type="hidden" name="kind" value="pre_upgrade">
+                    <button class="fv-button fv-button-secondary" type="submit"{% if recoveryHold %} disabled{% endif %}>Create pre-upgrade backup</button>
+                </form>
+            </div>
+            <p class="fv-page-note">ZIP archives are not encrypted or password-protected. Store downloaded copies securely.</p>
+        </section>
+        <section class="fv-panel" aria-labelledby="backup-inventory-heading">
+            <header class="fv-section-heading"><p class="fv-eyebrow">Inventory</p><h2 id="backup-inventory-heading">Available backups</h2></header>
+            {% if backupPagination.total == 0 %}
+                {% include '@platform_ui/components/empty_state.html.twig' with { eyebrow: 'No backups', headingId: 'backup-empty-heading', title: 'No completed backups yet', message: 'Create a manual or pre-upgrade backup to make a private recovery package.' } only %}
+            {% else %}
+                <div class="fv-table-container" tabindex="0" aria-label="Backup inventory table">
+                    <table class="fv-table"><caption class="fv-visually-hidden">Private backup inventory</caption><thead><tr><th scope="col">Kind</th><th scope="col">Created</th><th scope="col">Schema</th><th scope="col">Size</th><th scope="col">Integrity</th><th scope="col">Actions</th></tr></thead><tbody>
+                    {% for backup in backupPagination.items %}<tr><th scope="row">{{ backup.kind.label() }}</th><td><time datetime="{{ backup.createdAt|date('c') }}">{{ backup.createdAt|date('Y-m-d H:i:s T') }}</time></td><td>{{ backup.schemaVersion }}</td><td>{{ backup.sizeBytes|number_format(0, '.', ',') }} bytes</td><td><span class="fv-status-badge fv-status-badge-{{ backup.state.value == 'verified' ? 'success' : 'warning' }}">{{ backup.state.value|replace({'_': ' '})|title }}</span></td><td><div class="fv-table-actions">{% if backup.state.value == 'verified' %}<form method="post" action="{{ path('spoke_admin_backup_download', {backupId: backup.publicId}) }}"><input type="hidden" name="_token" value="{{ csrfToken }}"><button class="fv-button fv-button-secondary" type="submit">Download</button></form><button class="fv-button fv-button-danger" type="button" data-discovery-dialog-open="backup-delete-dialog-{{ backup.publicId }}" aria-haspopup="dialog"{% if backup.activeDownloads > 0 %} disabled{% endif %}>Delete</button>{% else %}<span class="fv-table-cell-note">No action available</span>{% endif %}</div></td></tr>{% endfor %}
+                    </tbody></table>
+                </div>
+                {% include '@platform_ui/components/pagination.html.twig' with {
+                    pages: backupPagination.pages,
+                    total: backupPagination.total,
+                    firstItem: backupPagination.firstItem,
+                    lastItem: backupPagination.lastItem,
+                    currentPage: backupPagination.page,
+                    pageCount: backupPagination.pageCount,
+                    pageParameter: backupPagination.pageParameter,
+                    previous: backupPagination.previous,
+                    next: backupPagination.next,
+                    pageSizeControl: {action: path('spoke_admin_maintenance'), id: 'backup-page-size', name: 'backup_page_size', value: backupPagination.pageSize, options: [25, 50, 100], hidden: []}
+                } only %}
+                <p class="fv-page-note">Deletion is permanent. A downloaded plain ZIP contains visitor submissions and private configuration.</p>
+            {% endif %}
+        </section>
+        {% for backup in backupPagination.items %}
+            {% if backup.state.value == 'verified' %}
+                <section class="fv-modal fv-discovery-dialog" id="backup-delete-dialog-{{ backup.publicId }}" role="dialog" aria-modal="true" aria-labelledby="backup-delete-heading-{{ backup.publicId }}" data-discovery-dialog>
+                    <div class="fv-modal-panel">
+                        <header class="fv-modal-header"><div><p class="fv-eyebrow">Permanent action</p><h2 id="backup-delete-heading-{{ backup.publicId }}">Delete {{ backup.kind.label()|lower }} backup?</h2></div><button class="fv-icon-button" type="button" data-modal-close aria-label="Close delete confirmation">×</button></header>
+                        <div class="fv-modal-body"><p class="fv-modal-description">This permanently removes the selected plain ZIP and its inventory record. It cannot be recovered from this installation.</p><dl class="fv-detail-list"><div><dt>Created</dt><dd>{{ backup.createdAt|date('Y-m-d H:i:s T') }}</dd></div><div><dt>Size</dt><dd>{{ backup.sizeBytes|number_format(0, '.', ',') }} bytes</dd></div></dl></div>
+                        <footer class="fv-modal-footer"><button class="fv-button fv-button-secondary" type="button" data-modal-close>Cancel</button><form method="post" action="{{ path('spoke_admin_backup_delete', {backupId: backup.publicId}) }}"><input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="confirm_permanent" value="1"><button class="fv-button fv-button-danger" type="submit">Permanently delete</button></form></footer>
+                    </div>
+                </section>
+            {% endif %}
+        {% endfor %}
+        <section class="fv-panel" aria-labelledby="restore-instructions-heading"><header class="fv-section-heading"><p class="fv-eyebrow">Hosting administrator</p><h2 id="restore-instructions-heading">Restore</h2><p>Restore is intentionally server-side. Validate an archive first, then run the restore command with explicit confirmation. A failed restore leaves the installation unavailable for repair.</p></header></section>
+        <section class="fv-panel" aria-labelledby="retention-status-heading">
+            <header class="fv-section-heading">
+                <p class="fv-eyebrow">Retention and cleanup</p>
+                <h2 id="retention-status-heading">Local lifecycle status</h2>
+                <p>Cleanup runs from the server scheduler. Active delivery is deferred safely, and records in Trash remain recoverable for at least seven full days.</p>
+            </header>
+            <div class="fv-overview-grid">
+                <article class="fv-card">
+                    <p class="fv-eyebrow">Scheduler status</p>
+                    <h3><span class="fv-status-badge fv-status-badge-{{ retentionSchedulerJob.severity }}">{{ retentionSchedulerJob.status|replace({'_': ' '})|title }}</span></h3>
+                    <p>{{ retentionSchedulerJob.message }} <a href="{{ path('spoke_admin_diagnostics') }}">View scheduler health.</a></p>
+                </article>
+                <article class="fv-card">
+                    <p class="fv-eyebrow">Last run</p>
+                    <h3>{{ retentionStatus.lastScanned }} scanned · {{ retentionStatus.lastDeleted }} deleted</h3>
+                    <p>{{ retentionStatus.lastDeferred }} deferred · {{ retentionStatus.lastFailed }} failed</p>
+                </article>
+                <article class="fv-card">
+                    <p class="fv-eyebrow">Configured policy</p>
+                    <h3>{{ retentionSettings.ordinaryRetentionDays }} / {{ retentionSettings.uncertainRetentionDays }} / {{ retentionSettings.auditRetentionDays }} days</h3>
+                    <p>Ordinary submissions · uncertain deliveries · audit and operational logs</p>
+                </article>
+            </div>
+            {% if retentionStatus.lastErrorCode %}
+                <div class="fv-alert fv-alert-danger" role="alert"><strong>Last cleanup reported an error.</strong><span>Code: {{ retentionStatus.lastErrorCode }}. Review the server command output and run the task again after correcting the reported condition.</span></div>
+            {% endif %}
         </section>
     {% else %}
         {% include '@platform_ui/components/empty_state.html.twig' with {

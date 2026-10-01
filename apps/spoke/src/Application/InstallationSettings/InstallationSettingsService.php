@@ -167,6 +167,23 @@ final readonly class InstallationSettingsService
         return $this->snapshot($applicationRoot);
     }
 
+    /** @param array<string, string> $input */
+    public function saveRetention(string $applicationRoot, array $input): SettingsSnapshot
+    {
+        $paths = $this->paths($applicationRoot);
+        $current = $this->settingsStore->get($paths);
+        $settings = $current->withRetention(
+            $this->retentionDays($input, 'ordinary_retention_days', 'ordinary submission retention'),
+            $this->retentionDays($input, 'uncertain_retention_days', 'uncertain delivery retention'),
+            $this->retentionDays($input, 'audit_retention_days', 'audit and operational-log retention'),
+        );
+        $now = $this->clock->now();
+        $this->settingsStore->save($paths, $settings, $now);
+        $this->settingsStore->recordAudit($paths, 'spoke.settings.retention_saved', 'success', $now);
+
+        return $this->snapshot($applicationRoot);
+    }
+
     public function sendSmtpTest(string $applicationRoot, string $recipient): SmtpTestState
     {
         $paths = $this->paths($applicationRoot);
@@ -326,6 +343,18 @@ final readonly class InstallationSettingsService
 
         if ($value < 1 || $value > 60) {
             throw new InstallationSettingsFailure('smtp_pacing_invalid', 'The SMTP attempt limit must be between 1 and 60 attempts per minute.', ['smtp_attempts_per_minute' => 'Enter a value from 1 to 60 attempts per minute.']);
+        }
+
+        return $value;
+    }
+
+    /** @param array<string, string> $input */
+    private function retentionDays(array $input, string $key, string $label): int
+    {
+        $value = $this->integer($input, $key, $label);
+
+        if ($value < 1 || $value > 365) {
+            throw new InstallationSettingsFailure('retention_days_invalid', 'The ' . $label . ' must be between 1 and 365 days.', [$key => 'Enter a value from 1 to 365 days.']);
         }
 
         return $value;

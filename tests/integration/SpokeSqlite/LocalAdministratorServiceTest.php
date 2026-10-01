@@ -35,7 +35,7 @@ final class LocalAdministratorServiceTest extends TestCase
         $this->clock = new AdjustableClock();
         mkdir($this->temporaryRoot, 0o700, true);
 
-        foreach (['database', 'secrets', 'logs', 'exports', 'diagnostics', 'backups/scheduled', 'backups/manual', 'backups/temporary', 'runtime'] as $directory) {
+        foreach (['database', 'secrets', 'logs', 'exports', 'diagnostics', 'backups/scheduled', 'backups/manual', 'backups/pre-upgrade', 'backups/temporary', 'runtime'] as $directory) {
             mkdir($this->temporaryRoot . DIRECTORY_SEPARATOR . $directory, 0o700, true);
         }
 
@@ -165,6 +165,7 @@ final class LocalAdministratorServiceTest extends TestCase
             $this->temporaryRoot . '/backups/manual',
             $this->temporaryRoot . '/backups/temporary',
             $this->temporaryRoot . '/runtime',
+            $this->temporaryRoot . '/backups/pre-upgrade',
         );
     }
 

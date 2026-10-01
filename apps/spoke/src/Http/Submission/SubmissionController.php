@@ -147,7 +147,8 @@ final class SubmissionController extends AbstractController
             'field_validation_failed', 'submission_shape_invalid' => Response::HTTP_UNPROCESSABLE_ENTITY,
             'rate_limited' => Response::HTTP_TOO_MANY_REQUESTS,
             'captcha_required', 'captcha_invalid' => Response::HTTP_UNPROCESSABLE_ENTITY,
-            'captcha_unavailable', 'submission_unavailable', 'storage_unavailable' => Response::HTTP_SERVICE_UNAVAILABLE,
+            'captcha_unavailable', 'submission_unavailable' => Response::HTTP_SERVICE_UNAVAILABLE,
+            'storage_unavailable' => Response::HTTP_INSUFFICIENT_STORAGE,
             'internal_error' => Response::HTTP_INTERNAL_SERVER_ERROR,
             default => Response::HTTP_BAD_REQUEST,
         };

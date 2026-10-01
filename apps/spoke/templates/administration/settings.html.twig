@@ -182,6 +182,79 @@
     </section>
     {% endif %}
 
+    {% if activeTab == 'storage' %}
+    <section class="fv-panel fv-settings-panel" aria-labelledby="storage-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Private storage</p>
+            <h2 id="storage-heading">Set the live-data allowance</h2>
+            <p>Control the local storage budget used by database state, logs, diagnostics, and active exports. Existing records are never deleted when the allowance changes.</p>
+        </header>
+        {% set storageState = storageSnapshot.usage.state.value %}
+        <div class="fv-alert{% if storageState == 'full' or storageState == 'unavailable' %} fv-alert-danger{% elseif storageState == 'critical' %} fv-alert-warning{% endif %}" role="status">
+            <strong>Storage status: {{ storageState|capitalize }}</strong>
+            <span>{{ storageSnapshot.usage.liveBytes|number_format(0, '.', ',') }} of {{ storageSnapshot.usage.allowanceBytes|number_format(0, '.', ',') }} bytes used ({{ storageSnapshot.usage.percent }}%).{% if storageState == 'full' %} New public intake is blocked until private storage is available again.{% elseif storageState == 'unavailable' %} Usage could not be measured reliably; new writes are fail-safe blocked.{% endif %}</span>
+        </div>
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_storage_update', {tab: 'storage'}) }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'storage-allowance-gb',
+                    name: 'storage_allowance_gb',
+                    label: 'Live-data allowance (GB)',
+                    type: 'number',
+                    value: formData.storage_allowance_gb,
+                    min: 1,
+                    max: 10,
+                    help: 'Decimal gigabytes. Default: 2 GB. Allowed range: 1–10 GB.',
+                    error: fieldErrors.storage_allowance_gb|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'storage-normal-warning-percent',
+                    name: 'storage_normal_warning_percent',
+                    label: 'Warning threshold (%)',
+                    type: 'number',
+                    value: formData.storage_normal_warning_percent,
+                    min: 1,
+                    max: 99,
+                    help: 'Default: 80%. The warning state begins at or above this percentage.',
+                    error: fieldErrors.storage_normal_warning_percent|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'storage-critical-warning-percent',
+                    name: 'storage_critical_warning_percent',
+                    label: 'Critical threshold (%)',
+                    type: 'number',
+                    value: formData.storage_critical_warning_percent,
+                    min: 2,
+                    max: 99,
+                    help: 'Default: 90%. This must remain above the warning threshold.',
+                    error: fieldErrors.storage_critical_warning_percent|default(null),
+                } only %}
+            </div>
+            {% include '@platform_ui/components/form_action_bar.html.twig' with {
+                helpText: 'The full state rejects new intake without deleting existing records.',
+                submitLabel: 'Save storage settings',
+            } only %}
+        </form>
+    </section>
+    <section class="fv-panel fv-settings-panel" aria-labelledby="storage-breakdown-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Usage breakdown</p>
+            <h2 id="storage-breakdown-heading">What counts toward the allowance</h2>
+        </header>
+        <div class="fv-table-container" tabindex="0" aria-label="Storage usage breakdown table">
+            <table class="fv-table">
+                <thead><tr><th scope="col">Category</th><th scope="col">Used bytes</th></tr></thead>
+                <tbody>
+                {% for label, bytes in storageSnapshot.usage.breakdown %}
+                    <tr><th scope="row">{{ label }}</th><td>{{ bytes|number_format(0, '.', ',') }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
     {% if activeTab == 'email' %}
     <section class="fv-panel fv-settings-panel" aria-labelledby="smtp-heading">
         <header class="fv-section-heading">
@@ -398,6 +471,58 @@
                 <button class="fv-button fv-button-secondary" type="submit">Clear active counters</button>
             </form>
         </div>
+    </section>
+    {% endif %}
+
+    {% if activeTab == 'retention' %}
+    <section class="fv-panel fv-settings-panel" aria-labelledby="retention-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Submission lifecycle</p>
+            <h2 id="retention-heading">Control local data retention</h2>
+            <p>Choose how long completed submission records, uncertain deliveries, and audit records remain in private storage. Values are measured from the relevant record event and may be set from 1 to 365 days.</p>
+        </header>
+        <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_retention_update', {tab: 'retention'}) }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'ordinary-retention-days',
+                    name: 'ordinary_retention_days',
+                    label: 'Ordinary submission retention (days)',
+                    type: 'number',
+                    value: formData.ordinary_retention_days,
+                    min: 1,
+                    max: 365,
+                    help: 'Default: 30 days. Handled and successfully delivered submissions use this period.',
+                    error: fieldErrors.ordinary_retention_days|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'uncertain-retention-days',
+                    name: 'uncertain_retention_days',
+                    label: 'Uncertain delivery retention (days)',
+                    type: 'number',
+                    value: formData.uncertain_retention_days,
+                    min: 1,
+                    max: 365,
+                    help: 'Default: 90 days. This preserves deliveries whose provider outcome could not be confirmed.',
+                    error: fieldErrors.uncertain_retention_days|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'audit-retention-days',
+                    name: 'audit_retention_days',
+                    label: 'Audit and operational-log retention (days)',
+                    type: 'number',
+                    value: formData.audit_retention_days,
+                    min: 1,
+                    max: 365,
+                    help: 'Default: 30 days. Redacted deletion evidence is retained according to this policy.',
+                    error: fieldErrors.audit_retention_days|default(null),
+                } only %}
+            </div>
+            {% include '@platform_ui/components/form_action_bar.html.twig' with {
+                helpText: 'Trash keeps records recoverable for at least seven full days. Active delivery is never deleted while queued or processing.',
+                submitLabel: 'Save retention settings',
+            } only %}
+        </form>
     </section>
     {% endif %}
 

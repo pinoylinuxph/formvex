@@ -284,7 +284,10 @@ final class PdoSubmissionReviewRepository implements SubmissionReviewRepository
             if ($state === 'trashed') {
                 return new SubmissionReviewActionResult(false, 'information', 'This submission is already in Trash. No change was made.');
             }
-            $this->update($connection, "UPDATE submissions SET state = 'trashed', pre_trash_state = :pre_trash_state, trashed_at = :timestamp, updated_at = :timestamp WHERE id = :id AND state IN ('accepted', 'handled')", $row, $timestamp, ['pre_trash_state' => $state]);
+            $retentionColumns = $this->hasColumn($connection, 'submissions', 'restored_at')
+                ? ', restored_at = NULL, recovery_deadline = NULL'
+                : '';
+            $this->update($connection, "UPDATE submissions SET state = 'trashed', pre_trash_state = :pre_trash_state, trashed_at = :timestamp, updated_at = :timestamp{$retentionColumns} WHERE id = :id AND state IN ('accepted', 'handled')", $row, $timestamp, ['pre_trash_state' => $state]);
 
             return $this->success($connection, $publicId, $event, $timestamp, 'The submission was moved to Trash. It remains recoverable until it is permanently deleted.');
         }
@@ -297,7 +300,10 @@ final class PdoSubmissionReviewRepository implements SubmissionReviewRepository
             if (!in_array($restoreState, ['accepted', 'handled'], true)) {
                 return $this->rejected($connection, $publicId, $event, $timestamp, 'The previous lifecycle state is unavailable, so this submission cannot be restored safely.');
             }
-            $this->update($connection, 'UPDATE submissions SET state = :state, pre_trash_state = NULL, trashed_at = NULL, updated_at = :timestamp WHERE id = :id AND state = \'trashed\'', $row, $timestamp, ['state' => $restoreState]);
+            $retentionColumns = $this->hasColumn($connection, 'submissions', 'restored_at')
+                ? ', restored_at = :timestamp, recovery_deadline = NULL'
+                : '';
+            $this->update($connection, "UPDATE submissions SET state = :state, pre_trash_state = NULL, trashed_at = NULL, updated_at = :timestamp{$retentionColumns} WHERE id = :id AND state = 'trashed'", $row, $timestamp, ['state' => $restoreState]);
 
             return $this->success($connection, $publicId, $event, $timestamp, 'The submission was restored to its previous review state.');
         }
@@ -513,6 +519,14 @@ final class PdoSubmissionReviewRepository implements SubmissionReviewRepository
     {
         $statement = $connection->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :table_name LIMIT 1");
         $statement->execute(['table_name' => $table]);
+
+        return $statement->fetchColumn() !== false;
+    }
+
+    private function hasColumn(PDO $connection, string $table, string $column): bool
+    {
+        $statement = $connection->prepare('SELECT 1 FROM pragma_table_info(:table_name) WHERE name = :column_name LIMIT 1');
+        $statement->execute(['table_name' => $table, 'column_name' => $column]);
 
         return $statement->fetchColumn() !== false;
     }

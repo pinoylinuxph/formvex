@@ -10,6 +10,7 @@ use Formvex\Spoke\Application\Abuse\SubmissionAbuseSettingsService;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\Branding\BrandingService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
+use Formvex\Spoke\Application\Storage\StorageSettingsService;
 use Formvex\Spoke\Domain\Abuse\AbuseSettingsSnapshot;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Branding\BrandingUpload;
@@ -31,13 +32,14 @@ final class SettingsController extends AbstractController
     private const CSRF_COOKIE = 'formvex_admin_csrf';
 
     /** @var list<string> */
-    private const SETTINGS_TABS = ['website', 'email', 'access', 'protection'];
+    private const SETTINGS_TABS = ['website', 'email', 'access', 'protection', 'retention', 'storage'];
 
     public function __construct(
         private readonly LocalAdministratorService $administratorService,
         private readonly SettingsRequestResolver $settingsRequestResolver,
         private readonly BrandingService $brandingService,
         private readonly InstallationSettingsService $settingsService,
+        private readonly StorageSettingsService $storageSettingsService,
         private readonly SubmissionAbuseSettingsService $abuseSettingsService,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
     ) {
@@ -142,6 +144,44 @@ final class SettingsController extends AbstractController
     public function saveDiscovery(Request $request): Response
     {
         return $this->save($request, 'discovery', ['discovery_payload_limit_kib']);
+    }
+
+    #[Route('/formvex/settings/retention', name: 'spoke_admin_settings_retention_update', methods: ['POST'])]
+    public function saveRetention(Request $request): Response
+    {
+        return $this->save($request, 'retention', [
+            'ordinary_retention_days',
+            'uncertain_retention_days',
+            'audit_retention_days',
+        ]);
+    }
+
+    #[Route('/formvex/settings/storage', name: 'spoke_admin_settings_storage_update', methods: ['POST'])]
+    public function saveStorage(Request $request): Response
+    {
+        $context = $this->authenticatedContext($request);
+        if ($context === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($context['session']->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+        $formData = $this->formData($snapshot);
+        try {
+            $payload = $this->settingsRequestResolver->payload($request, ['_token', 'storage_allowance_gb', 'storage_normal_warning_percent', 'storage_critical_warning_percent']);
+            $this->assertCsrf($context['session'], $payload['_token'] ?? '');
+            unset($payload['_token']);
+            $formData = array_merge($formData, $payload);
+            $this->storageSettingsService->save($this->runtimeConfiguration->applicationRoot, $payload);
+
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, 'Storage settings were saved successfully.', 'success', '', [], null, 'storage');
+        } catch (AdministratorFailure $failure) {
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger', '', [], null, 'storage');
+        } catch (InstallationSettingsFailure $failure) {
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', '', $failure->fieldErrors, null, 'storage');
+        }
     }
 
     #[Route('/formvex/settings/abuse', name: 'spoke_admin_settings_abuse_update', methods: ['POST'])]
@@ -249,6 +289,7 @@ final class SettingsController extends AbstractController
                 'smtp' => $this->settingsService->saveSmtp($this->runtimeConfiguration->applicationRoot, $payload),
                 'security' => $this->settingsService->saveSecurity($this->runtimeConfiguration->applicationRoot, $payload),
                 'discovery' => $this->settingsService->saveDiscovery($this->runtimeConfiguration->applicationRoot, $payload),
+                'retention' => $this->settingsService->saveRetention($this->runtimeConfiguration->applicationRoot, $payload),
                 default => throw new InstallationSettingsFailure('settings_group_invalid', 'Formvex could not identify the settings group being saved.'),
             };
 
@@ -289,6 +330,7 @@ final class SettingsController extends AbstractController
         $csrfToken = $this->csrfToken($request, $sessionId);
         $activeTab = $this->settingsTab($activeTab ?? $request->query->get('tab'), 'website');
         $abuseSnapshot ??= $this->abuseSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+        $storageSnapshot = $this->storageSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
         $formData = array_merge($this->formData($snapshot), [
             'brand_name' => $this->brandingService->snapshot($this->runtimeConfiguration->applicationRoot)->brandName,
             'slogan' => $this->brandingService->snapshot($this->runtimeConfiguration->applicationRoot)->slogan,
@@ -300,6 +342,9 @@ final class SettingsController extends AbstractController
             'flood_hour_limit' => (string) $abuseSnapshot->settings->floodHourLimit,
             'trusted_proxy_cidrs' => implode("\n", $abuseSnapshot->settings->normalizedTrustedProxyCidrs()),
             'turnstile_secret' => '',
+            'storage_allowance_gb' => (string) $storageSnapshot->settings->allowanceGigabytes(),
+            'storage_normal_warning_percent' => (string) $storageSnapshot->settings->normalWarningPercent,
+            'storage_critical_warning_percent' => (string) $storageSnapshot->settings->criticalWarningPercent,
         ], $formData);
         $response = $this->render('administration/settings.html.twig', [
             'csrfToken' => $csrfToken,
@@ -317,6 +362,8 @@ final class SettingsController extends AbstractController
                 ['id' => 'email', 'label' => 'Email delivery', 'description' => 'SMTP and test email'],
                 ['id' => 'access', 'label' => 'Administrator access', 'description' => 'Login protection'],
                 ['id' => 'protection', 'label' => 'Submission protection', 'description' => 'Discovery, limits, and CAPTCHA'],
+                ['id' => 'retention', 'label' => 'Retention', 'description' => 'Submission and audit lifecycle'],
+                ['id' => 'storage', 'label' => 'Storage', 'description' => 'Allowance, warnings, and exports'],
             ],
             'settings' => $snapshot,
             'formData' => $formData,
@@ -325,6 +372,7 @@ final class SettingsController extends AbstractController
             'messageVariant' => $variant,
             'fieldErrors' => $fieldErrors,
             'abuseSettings' => $abuseSnapshot,
+            'storageSnapshot' => $storageSnapshot,
         ]);
 
         if ($request->cookies->get(self::CSRF_COOKIE) !== $csrfToken) {
@@ -357,6 +405,9 @@ final class SettingsController extends AbstractController
             'window_minutes' => (string) $settings->loginThrottle->windowMinutes,
             'cooldown_minutes' => (string) $settings->loginThrottle->cooldownMinutes,
             'discovery_payload_limit_kib' => (string) intdiv($settings->discoveryPayloadLimitBytes, 1024),
+            'ordinary_retention_days' => (string) $settings->ordinaryRetentionDays,
+            'uncertain_retention_days' => (string) $settings->uncertainRetentionDays,
+            'audit_retention_days' => (string) $settings->auditRetentionDays,
             'test_recipient' => '',
             'per_form_short_limit' => '5',
             'per_form_hour_limit' => '20',
@@ -398,6 +449,8 @@ final class SettingsController extends AbstractController
             'smtp' => 'email',
             'security' => 'access',
             'discovery' => 'protection',
+            'retention' => 'retention',
+            'storage' => 'storage',
             default => 'website',
         };
     }

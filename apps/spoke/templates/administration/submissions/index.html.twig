@@ -80,6 +80,20 @@
         </div>
     </form>
 
+    <div class="fv-filter-actions" aria-label="Submission export actions">
+        <form method="post" action="{{ path('spoke_admin_submissions_export') }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            {% for parameter in exportParameters|default([]) %}
+                <input type="hidden" name="{{ parameter.name }}" value="{{ parameter.value }}">
+            {% endfor %}
+            <button class="fv-button fv-button-secondary" type="submit">Export current results</button>
+        </form>
+        {% if exportId|default(null) %}
+            <a class="fv-button fv-button-primary" href="{{ path('spoke_admin_export_download', {exportId: exportId}) }}">Download CSV export</a>
+            <span class="fv-field-help">This private download expires in 15 minutes.</span>
+        {% endif %}
+    </div>
+
     {% if result is null %}
         {% include '@platform_ui/components/empty_state.html.twig' with {
             eyebrow: 'Storage unavailable',

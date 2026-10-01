@@ -10,6 +10,7 @@ use Formvex\Contracts\V1\Submission\SubmissionRequest;
 use Formvex\Core\Delivery\DeliveryMessageSnapshot;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationRecord;
 use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
+use Formvex\Spoke\Domain\Storage\Contract\StorageCapacityGuard;
 use Formvex\Spoke\Domain\Submission\Contract\SubmissionStore;
 use Formvex\Spoke\Domain\Submission\Exception\SubmissionFailure;
 use Formvex\Spoke\Domain\Submission\SubmissionAccepted;
@@ -19,6 +20,10 @@ use Throwable;
 
 final class PdoSubmissionStore implements SubmissionStore
 {
+    public function __construct(private readonly ?StorageCapacityGuard $capacityGuard = null)
+    {
+    }
+
     public function findAcceptedAttempt(
         PrivateStoragePaths $paths,
         string $publicFormId,
@@ -82,6 +87,9 @@ final class PdoSubmissionStore implements SubmissionStore
             $timestamp = $this->formatTimestamp($now);
             $expiresAt = $now->modify('+24 hours');
             $fieldsJson = json_encode($validatedFields, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            if ($this->capacityGuard !== null && !$this->capacityGuard->evaluate($paths, strlen($fieldsJson) + 4096)->allowed) {
+                throw new SubmissionFailure('storage_unavailable', 'Your message could not be accepted because local storage is full or temporarily unavailable. Please try again later.');
+            }
             $parameters = [
                 'public_id' => $submissionId,
                 'form_id' => $this->integer($active, 'form_id'),

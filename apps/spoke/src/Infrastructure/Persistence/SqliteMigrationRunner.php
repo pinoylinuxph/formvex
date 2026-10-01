@@ -19,6 +19,10 @@ use Formvex\Spoke\Migrations\Version000009CreateFormActivation;
 use Formvex\Spoke\Migrations\Version000010CreateInstallationBranding;
 use Formvex\Spoke\Migrations\Version000011CreateSubmissionReview;
 use Formvex\Spoke\Migrations\Version000012CreateDeliveryReview;
+use Formvex\Spoke\Migrations\Version000013CreateRetentionAndCleanup;
+use Formvex\Spoke\Migrations\Version000014AddRetentionSuccessHeartbeat;
+use Formvex\Spoke\Migrations\Version000015CreateStorageAllowanceAndExports;
+use Formvex\Spoke\Migrations\Version000016CreateBackupInventory;
 use PDO;
 use Throwable;
 
@@ -38,6 +42,10 @@ final readonly class SqliteMigrationRunner
         private ?Version000010CreateInstallationBranding $brandingMigration = null,
         private ?Version000011CreateSubmissionReview $submissionReviewMigration = null,
         private ?Version000012CreateDeliveryReview $deliveryReviewMigration = null,
+        private ?Version000013CreateRetentionAndCleanup $retentionMigration = null,
+        private ?Version000014AddRetentionSuccessHeartbeat $retentionSuccessHeartbeatMigration = null,
+        private ?Version000015CreateStorageAllowanceAndExports $storageAllowanceMigration = null,
+        private ?Version000016CreateBackupInventory $backupInventoryMigration = null,
     ) {
     }
 
@@ -70,6 +78,18 @@ final readonly class SqliteMigrationRunner
             }
             if ($this->deliveryReviewMigration !== null) {
                 $migrations[] = $this->deliveryReviewMigration;
+            }
+            if ($this->retentionMigration !== null) {
+                $migrations[] = $this->retentionMigration;
+            }
+            if ($this->retentionSuccessHeartbeatMigration !== null) {
+                $migrations[] = $this->retentionSuccessHeartbeatMigration;
+            }
+            if ($this->storageAllowanceMigration !== null) {
+                $migrations[] = $this->storageAllowanceMigration;
+            }
+            if ($this->backupInventoryMigration !== null) {
+                $migrations[] = $this->backupInventoryMigration;
             }
             $knownVersions = array_map(
                 static fn (Migration $migration): string => $migration->version(),
