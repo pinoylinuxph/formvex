@@ -320,6 +320,86 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertSame('handled', $connection->query("SELECT state FROM submissions WHERE public_id = '22222222-2222-4222-8222-222222222222'")->fetchColumn());
     }
 
+    public function testDeliveryReviewListsSafeStateAndQueuesAnExplicitResend(): void
+    {
+        $this->seedDelivery();
+        $deliveryId = '33333333-3333-4333-8333-333333333333';
+
+        $unauthenticatedDetail = $this->request('GET', '/formvex/delivery/' . $deliveryId);
+        self::assertSame(Response::HTTP_FOUND, $unauthenticatedDetail->getStatusCode());
+        self::assertSame('/formvex/login', $unauthenticatedDetail->headers->get('Location'));
+
+        $unauthenticatedResend = $this->request('POST', '/formvex/delivery/' . $deliveryId . '/resend');
+        self::assertSame(Response::HTTP_FOUND, $unauthenticatedResend->getStatusCode());
+        self::assertSame('/formvex/login', $unauthenticatedResend->headers->get('Location'));
+
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $cookies = ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf];
+
+        $missingDetail = $this->request('GET', '/formvex/delivery/99999999-9999-4999-8999-999999999999', [], $cookies);
+        self::assertSame(Response::HTTP_NOT_FOUND, $missingDetail->getStatusCode());
+        self::assertStringNotContainsString('99999999-9999-4999-8999-999999999999', (string) $missingDetail->getContent());
+        self::assertStringNotContainsString('SQLSTATE', (string) $missingDetail->getContent());
+
+        $list = $this->request('GET', '/formvex/delivery?state=failed&page_size=25', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $list->getStatusCode());
+        self::assertStringContainsString('Delivery records', (string) $list->getContent());
+        self::assertStringContainsString('Contact delivery', (string) $list->getContent());
+        self::assertStringContainsString('6 / 6', (string) $list->getContent());
+        self::assertStringNotContainsString('owner@example.com', (string) $list->getContent());
+
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        $connection->exec("UPDATE form_configurations SET display_name = '<script>alert(1)</script>' WHERE id = 2");
+        $connection->exec("UPDATE submissions SET recipient = 'visitor-secret@example.test', fields_json = '{\"visitor\":\"visitor-secret\"}' WHERE id = 2");
+        $connection->exec("UPDATE delivery_jobs SET last_error_code = 'raw_provider_response smtp-password=super-secret' WHERE id = 2");
+
+        $detail = $this->request('GET', '/formvex/delivery/' . $deliveryId, [], $cookies);
+        self::assertSame(Response::HTTP_OK, $detail->getStatusCode());
+        self::assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', (string) $detail->getContent());
+        self::assertStringNotContainsString('<script>alert(1)</script>', (string) $detail->getContent());
+        self::assertStringContainsString('The delivery worker recorded a failure that requires administrator review.', (string) $detail->getContent());
+        self::assertStringNotContainsString('raw_provider_response', (string) $detail->getContent());
+        self::assertStringNotContainsString('super-secret', (string) $detail->getContent());
+        self::assertStringNotContainsString('visitor-secret@example.test', (string) $detail->getContent());
+        self::assertStringNotContainsString('visitor-secret', (string) $detail->getContent());
+        self::assertStringNotContainsString('owner@example.com', (string) $detail->getContent());
+        self::assertStringContainsString('Queue resend', (string) $detail->getContent());
+        preg_match('/action="\/formvex\/delivery\/[^\"]+\/resend".*?name="action_token" value="([^\"]+)"/s', (string) $detail->getContent(), $matches);
+        $actionToken = $matches[1] ?? '';
+        self::assertNotSame('', $actionToken);
+
+        $boundToAnotherResource = $this->request('POST', '/formvex/delivery/99999999-9999-4999-8999-999999999999/resend', [
+            '_token' => $csrf,
+            'action_token' => $actionToken,
+        ], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $boundToAnotherResource->getStatusCode());
+        self::assertStringContainsString('notice=security', (string) $boundToAnotherResource->headers->get('Location'));
+
+        $invalidCsrf = $this->request('POST', '/formvex/delivery/' . $deliveryId . '/resend', [
+            '_token' => 'invalid-token',
+            'action_token' => $actionToken,
+        ], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $invalidCsrf->getStatusCode());
+        self::assertStringContainsString('notice=security', (string) $invalidCsrf->headers->get('Location'));
+
+        $resend = $this->request('POST', '/formvex/delivery/' . $deliveryId . '/resend', [
+            '_token' => $csrf,
+            'action_token' => $actionToken,
+        ], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $resend->getStatusCode());
+        self::assertStringContainsString('notice=resend_queued', (string) $resend->headers->get('Location'));
+
+        self::assertSame('queued', $connection->query("SELECT state FROM delivery_jobs WHERE job_id = '$deliveryId'")->fetchColumn());
+        self::assertSame(2, (int) $connection->query("SELECT COUNT(*) FROM delivery_attempt_cycles WHERE delivery_job_id = 2")->fetchColumn());
+
+        $connection->exec("UPDATE delivery_jobs SET state = 'sent', last_error_code = NULL, last_outcome = 'accepted' WHERE id = 2");
+        $sentDetail = $this->request('GET', '/formvex/delivery/' . $deliveryId, [], $cookies);
+        self::assertSame(Response::HTTP_OK, $sentDetail->getStatusCode());
+        self::assertStringContainsString('The SMTP server accepted this message.', (string) $sentDetail->getContent());
+        self::assertStringNotContainsString('Inbox', (string) $sentDetail->getContent());
+        self::assertStringNotContainsString('Delivered', (string) $sentDetail->getContent());
+    }
+
     public function testAdministratorCanSaveBrandingAndItAppearsOnAuthAndPortalSurfaces(): void
     {
         [$session, $csrf] = $this->authenticateAdministrator();
@@ -430,6 +510,19 @@ final class AdministratorHttpTest extends KernelTestCase
         $connection->exec("INSERT INTO submissions (id, public_id, form_id, configuration_version_id, configuration_version, page_path, form_marker, recipient, subject, fields_json, classification, created_at, updated_at) VALUES (1, '22222222-2222-4222-8222-222222222222', 1, 1, 1, '/', 'contactForm', 'owner@example.com', 'Contact message', '{\"message\":\"<script>alert(1)</script>\"}', 'normal', '$timestamp', '$timestamp')");
         $connection->exec("INSERT INTO submission_attempts (public_form_id, attempt_id, submission_id, payload_hash, receipt_id, accepted_at, expires_at) VALUES ('11111111-1111-4111-8111-111111111111', 'attempt-0001', 1, 'hash', 'receipt-0001', '$timestamp', '2026-10-01T12:00:00.000000Z')");
         $connection->exec("INSERT INTO delivery_jobs (id, job_id, submission_id, state, attempt_count, due_at, created_at, updated_at) VALUES (1, 'job-0001', 1, 'sent', 1, '$timestamp', '$timestamp', '$timestamp')");
+    }
+
+    private function seedDelivery(): void
+    {
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $timestamp = '2026-09-30T12:00:00.000000Z';
+        $deliveryId = '33333333-3333-4333-8333-333333333333';
+        $connection->exec("INSERT INTO form_configurations (id, public_id, display_name, created_at, updated_at) VALUES (2, '44444444-4444-4444-8444-444444444444', 'Contact delivery', '$timestamp', '$timestamp')");
+        $connection->exec("INSERT INTO form_configuration_versions (id, form_id, version_number, state, revision, recipient, subject, created_at, updated_at) VALUES (2, 2, 1, 'active', 1, 'owner@example.com', 'Contact message', '$timestamp', '$timestamp')");
+        $connection->exec("INSERT INTO submissions (id, public_id, form_id, configuration_version_id, configuration_version, page_path, form_marker, recipient, subject, fields_json, classification, created_at, updated_at) VALUES (2, '55555555-5555-4555-8555-555555555555', 2, 2, 1, '/', 'contactForm', 'owner@example.com', 'Contact message', '{}', 'normal', '$timestamp', '$timestamp')");
+        $connection->exec("INSERT INTO delivery_jobs (id, job_id, submission_id, state, attempt_count, due_at, last_error_code, last_outcome, created_at, updated_at) VALUES (2, '$deliveryId', 2, 'failed', 6, '$timestamp', 'smtp_authentication_failed', 'permanent_failure', '$timestamp', '$timestamp')");
+        $connection->exec("INSERT INTO delivery_attempt_cycles (id, delivery_job_id, cycle_number, origin, state, attempt_count, last_error_code, created_at, updated_at) VALUES (2, 2, 1, 'automatic', 'failed', 6, 'smtp_authentication_failed', '$timestamp', '$timestamp')");
+        $connection->exec('UPDATE delivery_jobs SET active_cycle_id = 2 WHERE id = 2');
     }
 
     private function cookieValue(Response $response, string $name): string

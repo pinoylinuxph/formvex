@@ -18,6 +18,7 @@ use Formvex\Spoke\Migrations\Version000008CreateEmailDeliveryWorker;
 use Formvex\Spoke\Migrations\Version000009CreateFormActivation;
 use Formvex\Spoke\Migrations\Version000010CreateInstallationBranding;
 use Formvex\Spoke\Migrations\Version000011CreateSubmissionReview;
+use Formvex\Spoke\Migrations\Version000012CreateDeliveryReview;
 use PDO;
 use Throwable;
 
@@ -36,6 +37,7 @@ final readonly class SqliteMigrationRunner
         private ?Version000009CreateFormActivation $formActivationMigration = null,
         private ?Version000010CreateInstallationBranding $brandingMigration = null,
         private ?Version000011CreateSubmissionReview $submissionReviewMigration = null,
+        private ?Version000012CreateDeliveryReview $deliveryReviewMigration = null,
     ) {
     }
 
@@ -65,6 +67,9 @@ final readonly class SqliteMigrationRunner
             }
             if ($this->submissionReviewMigration !== null) {
                 $migrations[] = $this->submissionReviewMigration;
+            }
+            if ($this->deliveryReviewMigration !== null) {
+                $migrations[] = $this->deliveryReviewMigration;
             }
             $knownVersions = array_map(
                 static fn (Migration $migration): string => $migration->version(),

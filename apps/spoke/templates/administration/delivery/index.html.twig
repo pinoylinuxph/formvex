@@ -1,0 +1,147 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}Delivery · {{ branding.brandName }}{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    <nav class="fv-breadcrumbs" aria-label="Breadcrumbs">
+        <a href="{{ path('spoke_admin_home') }}">Overview</a>
+        <span aria-hidden="true">/</span>
+        <span>Operations</span>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Delivery</span>
+    </nav>
+
+    {% include '@platform_ui/components/page_header.html.twig' with {
+        pageTitle: pageTitle,
+        pageDescription: pageDescription,
+    } only %}
+
+    {% include '@platform_ui/components/feedback.html.twig' with {
+        message: message,
+        title: messageTitle|default('Delivery'),
+        variant: messageVariant|default('information'),
+    } only %}
+
+    {% if warnings is not empty %}
+        <section aria-labelledby="delivery-warnings-heading">
+            <h2 id="delivery-warnings-heading" class="fv-visually-hidden">Delivery warnings</h2>
+            {% for warning in warnings %}
+                <div class="fv-alert fv-alert-{{ warning.severity }}" role="status">
+                    <strong>{{ warning.title }}</strong>
+                    <span>{{ warning.message }}</span>
+                </div>
+            {% endfor %}
+        </section>
+    {% endif %}
+
+    <form class="fv-filter-bar" method="get" action="{{ path('spoke_admin_delivery') }}">
+        <div class="fv-filter-field">
+            <label for="delivery-state">State</label>
+            <select class="fv-input" id="delivery-state" name="state">
+                <option value="all"{% if query.state == 'all' %} selected{% endif %}>All states</option>
+                <option value="queued"{% if query.state == 'queued' %} selected{% endif %}>Queued</option>
+                <option value="processing"{% if query.state == 'processing' %} selected{% endif %}>Processing</option>
+                <option value="sent"{% if query.state == 'sent' %} selected{% endif %}>Sent</option>
+                <option value="failed"{% if query.state == 'failed' %} selected{% endif %}>Failed</option>
+                <option value="uncertain"{% if query.state == 'uncertain' %} selected{% endif %}>Uncertain</option>
+            </select>
+        </div>
+        <div class="fv-filter-field">
+            <label for="delivery-outcome">Outcome</label>
+            <select class="fv-input" id="delivery-outcome" name="outcome">
+                <option value="all"{% if query.outcome == 'all' %} selected{% endif %}>All outcomes</option>
+                <option value="accepted"{% if query.outcome == 'accepted' %} selected{% endif %}>Accepted</option>
+                <option value="temporary_failure"{% if query.outcome == 'temporary_failure' %} selected{% endif %}>Temporary failure</option>
+                <option value="permanent_failure"{% if query.outcome == 'permanent_failure' %} selected{% endif %}>Permanent/configuration failure</option>
+                <option value="uncertain"{% if query.outcome == 'uncertain' %} selected{% endif %}>Uncertain</option>
+            </select>
+        </div>
+        <div class="fv-filter-field">
+            <label for="delivery-form">Form</label>
+            <select class="fv-input" id="delivery-form" name="form">
+                <option value="">All forms</option>
+                {% for form in forms %}
+                    <option value="{{ form.publicId }}"{% if query.formPublicId == form.publicId %} selected{% endif %}>{{ form.displayName }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="fv-filter-field">
+            <label for="delivery-sort">Activity</label>
+            <select class="fv-input" id="delivery-sort" name="sort">
+                <option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>Newest first</option>
+                <option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>Oldest first</option>
+            </select>
+        </div>
+        <div class="fv-filter-actions">
+            <button class="fv-button fv-button-primary" type="submit">Apply filters</button>
+            <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_delivery') }}">Reset</a>
+        </div>
+    </form>
+
+    {% if result is null %}
+        {% include '@platform_ui/components/empty_state.html.twig' with {
+            eyebrow: 'Storage unavailable',
+            headingId: 'delivery-error-heading',
+            title: 'The delivery list is unavailable',
+            message: 'The local database could not provide a safe delivery result. Correct the storage problem and reload this page.',
+        } only %}
+    {% elseif result.items is empty %}
+        {% include '@platform_ui/components/empty_state.html.twig' with {
+            eyebrow: 'No matching deliveries',
+            headingId: 'delivery-empty-heading',
+            title: 'There are no delivery records to review',
+            message: 'Accepted messages and their delivery state will appear here after a form submission is stored.',
+        } only %}
+    {% else %}
+        <section class="fv-panel" aria-labelledby="delivery-list-heading">
+            <h2 id="delivery-list-heading" class="fv-visually-hidden">Delivery records</h2>
+            <div class="fv-table-container" tabindex="0" aria-label="Delivery records table">
+                <table class="fv-table">
+                    <thead>
+                    <tr>
+                        <th scope="col">Delivery</th>
+                        <th scope="col">Form</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">Attempts</th>
+                        <th scope="col">Last activity</th>
+                        <th scope="col">Next due</th>
+                        <th scope="col">Recipient</th>
+                        <th scope="col"><span class="fv-visually-hidden">Action</span></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for item in result.items %}
+                        <tr>
+                            <th scope="row"><code>{{ item.publicId|slice(0, 12) }}…</code></th>
+                            <td>{{ item.formName }}</td>
+                            <td><span class="fv-status-badge">{{ item.state|capitalize }}</span></td>
+                            <td>{{ item.outcome }}</td>
+                            <td>{{ item.attempts }}</td>
+                            <td><time datetime="{{ item.lastActivity }}">{{ item.lastActivity|date('Y-m-d H:i') }}</time></td>
+                            <td>{% if item.nextDueAt %}<time datetime="{{ item.nextDueAt }}">{{ item.nextDueAt|date('Y-m-d H:i') }}</time>{% else %}—{% endif %}</td>
+                            <td>{{ item.recipientMasked }}</td>
+                            <td><a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_delivery_detail', {deliveryId: item.publicId}) }}">Open</a></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% include '@platform_ui/components/pagination.html.twig' with {
+            pages: pagination.pages|default([]),
+            total: pagination.total|default(0),
+            firstItem: pagination.firstItem|default(0),
+            lastItem: pagination.lastItem|default(0),
+            currentPage: pagination.currentPage|default(1),
+            pageCount: pagination.pageCount|default(1),
+            pageParameter: pagination.pageParameter|default('page'),
+            previous: pagination.previous|default(null),
+            next: pagination.next|default(null),
+            pageSizeControl: pageSizeControl|default(null),
+            ariaLabel: 'Delivery pages',
+        } only %}
+    {% endif %}
+</div>
+{% endblock %}

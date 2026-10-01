@@ -22,12 +22,14 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
         $connection = $this->connection($paths);
         $limit = max(1, min(100, $limit));
         $timestamp = $this->formatTimestamp($now);
+        $cycleSchema = $this->hasTable($connection, 'delivery_attempt_cycles') && $this->hasColumn($connection, 'delivery_attempts', 'cycle_id');
 
         try {
             $connection->exec('BEGIN IMMEDIATE TRANSACTION');
             $this->recoverStaleClaims($connection, $timestamp);
+            $columns = $cycleSchema ? 'id, job_id, attempt_count, snapshot_json, active_cycle_id' : 'id, job_id, attempt_count, snapshot_json';
             $statement = $connection->prepare(
-                "SELECT id, job_id, attempt_count, snapshot_json FROM delivery_jobs WHERE state = 'queued' AND due_at <= :due_at ORDER BY due_at ASC, id ASC LIMIT {$limit}",
+                "SELECT {$columns} FROM delivery_jobs WHERE state = 'queued' AND due_at <= :due_at ORDER BY due_at ASC, id ASC LIMIT {$limit}",
             );
             $statement->execute(['due_at' => $timestamp]);
             $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
@@ -39,7 +41,25 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
                 }
 
                 $jobId = $row['job_id'];
+                $internalJobId = $this->integerValue($row['id'] ?? null);
+                $cycleId = null;
                 $attemptNumber = $this->integerValue($row['attempt_count'] ?? 0) + 1;
+                if ($cycleSchema) {
+                    $cycleId = is_numeric($row['active_cycle_id'] ?? null) ? (int) $row['active_cycle_id'] : null;
+                    if ($cycleId === null) {
+                        $cycleInsert = $connection->prepare(
+                            "INSERT INTO delivery_attempt_cycles (delivery_job_id, cycle_number, origin, state, attempt_count, created_at, updated_at) VALUES (:job_id, 1, 'automatic', 'queued', 0, :created_at, :updated_at)",
+                        );
+                        $cycleInsert->execute(['job_id' => $internalJobId, 'created_at' => $timestamp, 'updated_at' => $timestamp]);
+                        $cycleId = $this->integerValue($connection->lastInsertId());
+                        $activeCycle = $connection->prepare('UPDATE delivery_jobs SET active_cycle_id = :cycle_id WHERE id = :job_id');
+                        $activeCycle->execute(['cycle_id' => $cycleId, 'job_id' => $internalJobId]);
+                    }
+                    $cycleCount = $connection->prepare('SELECT attempt_count FROM delivery_attempt_cycles WHERE id = :cycle_id AND delivery_job_id = :job_id');
+                    $cycleCount->execute(['cycle_id' => $cycleId, 'job_id' => $internalJobId]);
+                    $cycleAttemptCount = $cycleCount->fetchColumn();
+                    $attemptNumber = is_numeric($cycleAttemptCount) ? (int) $cycleAttemptCount + 1 : $attemptNumber;
+                }
                 $update = $connection->prepare(
                     "UPDATE delivery_jobs SET state = 'processing', attempt_count = :attempt_count, lease_token = :lease_token, lease_expires_at = :lease_expires_at, updated_at = :updated_at WHERE id = :id AND state = 'queued'",
                 );
@@ -48,21 +68,24 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
                     'lease_token' => $leaseToken,
                     'lease_expires_at' => $this->formatTimestamp($leaseExpiresAt),
                     'updated_at' => $timestamp,
-                    'id' => $this->integerValue($row['id'] ?? null),
+                    'id' => $internalJobId,
                 ]);
 
                 if ($update->rowCount() !== 1) {
                     continue;
                 }
 
-                $attempt = $connection->prepare(
-                    "INSERT INTO delivery_attempts (job_id, attempt_number, outcome, started_at) SELECT id, :attempt_number, 'started', :started_at FROM delivery_jobs WHERE id = :id",
-                );
-                $attempt->execute([
-                    'attempt_number' => $attemptNumber,
-                    'started_at' => $timestamp,
-                    'id' => $this->integerValue($row['id'] ?? null),
-                ]);
+                if ($cycleSchema) {
+                    $cycleUpdate = $connection->prepare("UPDATE delivery_attempt_cycles SET state = 'processing', attempt_count = :attempt_count, updated_at = :updated_at WHERE id = :cycle_id AND delivery_job_id = :job_id");
+                    $cycleUpdate->execute(['attempt_count' => $attemptNumber, 'updated_at' => $timestamp, 'cycle_id' => $cycleId, 'job_id' => $internalJobId]);
+                    $attempt = $connection->prepare("INSERT INTO delivery_attempts (job_id, cycle_id, attempt_number, outcome, started_at) VALUES (:job_id, :cycle_id, :attempt_number, 'started', :started_at)");
+                    $attempt->execute(['job_id' => $internalJobId, 'cycle_id' => $cycleId, 'attempt_number' => $attemptNumber, 'started_at' => $timestamp]);
+                } else {
+                    $attempt = $connection->prepare(
+                        "INSERT INTO delivery_attempts (job_id, attempt_number, outcome, started_at) SELECT id, :attempt_number, 'started', :started_at FROM delivery_jobs WHERE id = :id",
+                    );
+                    $attempt->execute(['attempt_number' => $attemptNumber, 'started_at' => $timestamp, 'id' => $internalJobId]);
+                }
 
                 $snapshot = null;
                 if (is_string($row['snapshot_json'] ?? null) && $row['snapshot_json'] !== '') {
@@ -82,7 +105,7 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
                     }
                 }
 
-                $claims[] = new ClaimedDeliveryJob($jobId, $attemptNumber, $leaseToken, $snapshot);
+                $claims[] = new ClaimedDeliveryJob($jobId, $attemptNumber, $leaseToken, $snapshot, $cycleId);
             }
 
             $connection->commit();
@@ -116,6 +139,7 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
     {
         $connection = $this->connection($paths);
         $timestamp = $this->formatTimestamp($now);
+        $cycleSchema = $this->hasTable($connection, 'delivery_attempt_cycles') && $this->hasColumn($connection, 'delivery_attempts', 'cycle_id');
 
         try {
             $connection->exec('BEGIN IMMEDIATE TRANSACTION');
@@ -145,17 +169,41 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
                 return false;
             }
 
-            $attempt = $connection->prepare(
-                'UPDATE delivery_attempts SET outcome = :outcome, error_code = :error_code, completed_at = :completed_at, next_due_at = :next_due_at WHERE job_id = (SELECT id FROM delivery_jobs WHERE job_id = :job_id) AND attempt_number = :attempt_number AND outcome = \'started\'',
-            );
-            $attempt->execute([
-                'outcome' => $outcome === DeliveryOutcomeType::TEMPORARY && $nextDueAt === null ? 'temporary_failure' : $outcome->value,
-                'error_code' => $storedError,
-                'completed_at' => $timestamp,
-                'next_due_at' => $nextDueAt === null ? null : $this->formatTimestamp($nextDueAt),
-                'job_id' => $job->jobId,
-                'attempt_number' => $job->attemptNumber,
-            ]);
+            if ($cycleSchema && $job->cycleId !== null) {
+                $cycle = $connection->prepare(
+                    'UPDATE delivery_attempt_cycles SET state = :state, last_error_code = :last_error_code, updated_at = :updated_at WHERE id = :cycle_id AND delivery_job_id = (SELECT id FROM delivery_jobs WHERE job_id = :job_id)',
+                );
+                $cycle->execute([
+                    'state' => $state,
+                    'last_error_code' => $storedError,
+                    'updated_at' => $timestamp,
+                    'cycle_id' => $job->cycleId,
+                    'job_id' => $job->jobId,
+                ]);
+                $attempt = $connection->prepare(
+                    'UPDATE delivery_attempts SET outcome = :outcome, error_code = :error_code, completed_at = :completed_at, next_due_at = :next_due_at WHERE cycle_id = :cycle_id AND attempt_number = :attempt_number AND outcome = \'started\'',
+                );
+                $attempt->execute([
+                    'outcome' => $outcome === DeliveryOutcomeType::TEMPORARY && $nextDueAt === null ? 'temporary_failure' : $outcome->value,
+                    'error_code' => $storedError,
+                    'completed_at' => $timestamp,
+                    'next_due_at' => $nextDueAt === null ? null : $this->formatTimestamp($nextDueAt),
+                    'cycle_id' => $job->cycleId,
+                    'attempt_number' => $job->attemptNumber,
+                ]);
+            } else {
+                $attempt = $connection->prepare(
+                    'UPDATE delivery_attempts SET outcome = :outcome, error_code = :error_code, completed_at = :completed_at, next_due_at = :next_due_at WHERE job_id = (SELECT id FROM delivery_jobs WHERE job_id = :job_id) AND attempt_number = :attempt_number AND outcome = \'started\'',
+                );
+                $attempt->execute([
+                    'outcome' => $outcome === DeliveryOutcomeType::TEMPORARY && $nextDueAt === null ? 'temporary_failure' : $outcome->value,
+                    'error_code' => $storedError,
+                    'completed_at' => $timestamp,
+                    'next_due_at' => $nextDueAt === null ? null : $this->formatTimestamp($nextDueAt),
+                    'job_id' => $job->jobId,
+                    'attempt_number' => $job->attemptNumber,
+                ]);
+            }
             $connection->commit();
 
             return true;
@@ -174,9 +222,17 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
         $statement->execute(['now' => $timestamp]);
         $ids = $statement->fetchAll(PDO::FETCH_COLUMN);
 
+        $cycleSchema = $this->hasTable($connection, 'delivery_attempt_cycles') && $this->hasColumn($connection, 'delivery_attempts', 'cycle_id');
         foreach ($ids as $id) {
-            $attempt = $connection->prepare("UPDATE delivery_attempts SET outcome = 'uncertain', error_code = 'stale_lease', completed_at = :completed_at WHERE job_id = :job_id AND outcome = 'started'");
-            $attempt->execute(['completed_at' => $timestamp, 'job_id' => $this->integerValue($id)]);
+            if ($cycleSchema) {
+                $attempt = $connection->prepare("UPDATE delivery_attempts SET outcome = 'uncertain', error_code = 'stale_lease', completed_at = :completed_at WHERE job_id = :job_id AND outcome = 'started'");
+                $attempt->execute(['completed_at' => $timestamp, 'job_id' => $this->integerValue($id)]);
+                $cycle = $connection->prepare("UPDATE delivery_attempt_cycles SET state = 'uncertain', last_error_code = 'stale_lease', updated_at = :updated_at WHERE delivery_job_id = :job_id AND state = 'processing'");
+                $cycle->execute(['updated_at' => $timestamp, 'job_id' => $this->integerValue($id)]);
+            } else {
+                $attempt = $connection->prepare("UPDATE delivery_attempts SET outcome = 'uncertain', error_code = 'stale_lease', completed_at = :completed_at WHERE job_id = :job_id AND outcome = 'started'");
+                $attempt->execute(['completed_at' => $timestamp, 'job_id' => $this->integerValue($id)]);
+            }
             $job = $connection->prepare("UPDATE delivery_jobs SET state = 'uncertain', last_error_code = 'stale_lease', last_outcome = 'uncertain', lease_token = NULL, lease_expires_at = NULL, updated_at = :updated_at WHERE id = :id AND state = 'processing'");
             $job->execute(['updated_at' => $timestamp, 'id' => $this->integerValue($id)]);
         }
@@ -211,5 +267,21 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
         }
 
         throw new RuntimeException('The delivery queue returned an invalid internal identifier.');
+    }
+
+    private function hasTable(PDO $connection, string $table): bool
+    {
+        $statement = $connection->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :table_name LIMIT 1");
+        $statement->execute(['table_name' => $table]);
+
+        return $statement->fetchColumn() !== false;
+    }
+
+    private function hasColumn(PDO $connection, string $table, string $column): bool
+    {
+        $statement = $connection->prepare('SELECT 1 FROM pragma_table_info(:table_name) WHERE name = :column_name LIMIT 1');
+        $statement->execute(['table_name' => $table, 'column_name' => $column]);
+
+        return $statement->fetchColumn() !== false;
     }
 }

@@ -1,0 +1,154 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}Delivery review · {{ branding.brandName }}{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    <nav class="fv-breadcrumbs" aria-label="Breadcrumbs">
+        <a href="{{ path('spoke_admin_home') }}">Overview</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ path('spoke_admin_delivery') }}">Delivery</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Review</span>
+    </nav>
+
+    {% include '@platform_ui/components/feedback.html.twig' with {
+        message: message,
+        title: messageTitle|default('Delivery review'),
+        variant: messageVariant|default('information'),
+    } only %}
+
+    {% if details is null %}
+        {% include '@platform_ui/components/empty_state.html.twig' with {
+            eyebrow: 'Unavailable',
+            headingId: 'delivery-detail-error-heading',
+            title: messageTitle|default('Delivery not available'),
+            message: message|default('The requested delivery cannot be displayed.'),
+            actionLabel: 'Return to delivery',
+            actionHref: path('spoke_admin_delivery'),
+        } only %}
+    {% else %}
+        <header class="fv-page-header">
+            <div>
+                <p class="fv-eyebrow">Delivery review</p>
+                <h1>{{ details.formName }}</h1>
+                <p class="fv-page-description">Delivery <code>{{ details.publicId }}</code> · Configuration version {{ details.configurationVersion }}</p>
+            </div>
+            <div class="fv-submission-badges">
+                <span class="fv-status-badge">{{ details.state|capitalize }}</span>
+                <span class="fv-status-badge">{{ details.outcome }}</span>
+            </div>
+        </header>
+
+        {% if warnings is not empty %}
+            <section aria-labelledby="delivery-detail-warnings-heading">
+                <h2 id="delivery-detail-warnings-heading" class="fv-visually-hidden">Delivery warnings</h2>
+                {% for warning in warnings %}
+                    <div class="fv-alert fv-alert-{{ warning.severity }}" role="status">
+                        <strong>{{ warning.title }}</strong>
+                        <span>{{ warning.message }}</span>
+                    </div>
+                {% endfor %}
+            </section>
+        {% endif %}
+
+        <section class="fv-overview-grid" aria-label="Delivery metadata">
+            <div class="fv-card"><span class="fv-eyebrow">Accepted</span><strong>{{ details.acceptedAt|date('Y-m-d H:i') }}</strong><p>The accepted message snapshot is retained for this delivery.</p></div>
+            <div class="fv-card"><span class="fv-eyebrow">Recipient</span><strong>{{ details.recipientMasked }}</strong><p>The full recipient is not shown on this page.</p></div>
+            <div class="fv-card"><span class="fv-eyebrow">Current cycle</span><strong>{{ details.attemptCount }} / 6 attempts</strong><p>{{ details.manualCycleCount }} manual resend cycle(s) recorded.</p></div>
+            <div class="fv-card"><span class="fv-eyebrow">Next due</span><strong>{% if details.nextDueAt %}{{ details.nextDueAt|date('Y-m-d H:i') }}{% else %}—{% endif %}</strong><p>Queued work is processed by the delivery worker.</p></div>
+        </section>
+
+        {% if details.lastErrorCode != '' %}
+            <section class="fv-panel" aria-labelledby="delivery-failure-heading">
+                <div class="fv-section-heading">
+                    <p class="fv-eyebrow">Action required</p>
+                    <h2 id="delivery-failure-heading">{{ details.lastErrorCode|replace({'_': ' '})|capitalize }}</h2>
+                    <p>{{ details.lastErrorMessage }}</p>
+                </div>
+            </section>
+        {% endif %}
+
+        <section class="fv-panel" aria-labelledby="delivery-resend-heading">
+            <div class="fv-section-heading">
+                <p class="fv-eyebrow">Explicit action</p>
+                <h2 id="delivery-resend-heading">Resend this delivery</h2>
+                {% if details.resendAllowed %}
+                    <p>The original accepted message snapshot will be queued for the delivery worker. SMTP is not contacted by this page.</p>
+                {% else %}
+                    <p>{{ details.resendUnavailableReason }}</p>
+                {% endif %}
+            </div>
+            {% if details.resendAllowed %}
+                <form method="post" action="{{ path('spoke_admin_delivery_resend', {deliveryId: details.publicId}) }}" class="fv-confirm-action">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}">
+                    <input type="hidden" name="action_token" value="{{ actionToken }}">
+                    {% if details.uncertainConfirmationRequired %}
+                        <div class="fv-alert fv-alert-warning" role="alert">
+                            <strong>Duplicate-delivery warning</strong>
+                            <span>The original SMTP result is unknown. Resending may deliver the same message twice.</span>
+                        </div>
+                        <label><input type="checkbox" name="confirm_uncertain" value="1" required> I understand this may send a duplicate email</label>
+                    {% endif %}
+                    <button class="fv-button fv-button-primary" type="submit">Queue resend</button>
+                </form>
+            {% endif %}
+        </section>
+
+        <section class="fv-panel" aria-labelledby="delivery-attempts-heading">
+            <div class="fv-section-heading">
+                <p class="fv-eyebrow">Delivery history</p>
+                <h2 id="delivery-attempts-heading">Attempt cycles</h2>
+                <p>Only safe outcomes, timestamps, and administrator-actionable error categories are shown.</p>
+            </div>
+            {% if details.attempts is empty %}
+                <p class="fv-content-muted">No worker attempt has started for this delivery.</p>
+            {% else %}
+                <div class="fv-table-container" tabindex="0" aria-label="Delivery attempt history table">
+                    <table class="fv-table">
+                        <thead><tr><th scope="col">Cycle</th><th scope="col">Origin</th><th scope="col">Attempt</th><th scope="col">Outcome</th><th scope="col">Started</th><th scope="col">Completed</th><th scope="col">Next due</th><th scope="col">Failure</th></tr></thead>
+                        <tbody>
+                        {% for attempt in details.attempts %}
+                            <tr>
+                                <th scope="row">{{ attempt.cycleNumber }}</th>
+                                <td>{{ attempt.origin|capitalize }}</td>
+                                <td>{{ attempt.attemptNumber }} / 6</td>
+                                <td>{{ attempt.outcome }}</td>
+                                <td><time datetime="{{ attempt.startedAt }}">{{ attempt.startedAt|date('Y-m-d H:i') }}</time></td>
+                                <td>{% if attempt.completedAt %}<time datetime="{{ attempt.completedAt }}">{{ attempt.completedAt|date('Y-m-d H:i') }}</time>{% else %}—{% endif %}</td>
+                                <td>{% if attempt.nextDueAt %}<time datetime="{{ attempt.nextDueAt }}">{{ attempt.nextDueAt|date('Y-m-d H:i') }}</time>{% else %}—{% endif %}</td>
+                                <td>{% if attempt.errorCode %}<span title="{{ attempt.errorCode }}">{{ attempt.errorMessage }}</span>{% else %}—{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="fv-panel" aria-labelledby="delivery-audit-heading">
+            <div class="fv-section-heading">
+                <p class="fv-eyebrow">Audit history</p>
+                <h2 id="delivery-audit-heading">Review events</h2>
+                <p>Only safe action names, outcomes, timestamps, and the opaque delivery identity are retained here.</p>
+            </div>
+            {% if details.auditEvents is empty %}
+                <p class="fv-content-muted">No delivery review events have been recorded.</p>
+            {% else %}
+                <div class="fv-table-container" tabindex="0" aria-label="Delivery audit history table">
+                    <table class="fv-table">
+                        <thead><tr><th scope="col">Event</th><th scope="col">Outcome</th><th scope="col">Time</th></tr></thead>
+                        <tbody>
+                        {% for event in details.auditEvents %}
+                            <tr><th scope="row">{{ event.event }}</th><td>{{ event.outcome }}</td><td><time datetime="{{ event.occurredAt }}">{{ event.occurredAt|date('Y-m-d H:i') }}</time></td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+        </section>
+
+        <p><a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_submission_detail', {submissionId: details.submissionPublicId}) }}">Open related submission</a></p>
+    {% endif %}
+</div>
+{% endblock %}

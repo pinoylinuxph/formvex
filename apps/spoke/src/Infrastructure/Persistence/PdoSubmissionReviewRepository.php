@@ -317,6 +317,9 @@ final class PdoSubmissionReviewRepository implements SubmissionReviewRepository
         $id = $this->integer($row, 'id');
         $this->execute($connection, 'DELETE FROM submission_attempts WHERE submission_id = :id', ['id' => $id]);
         $this->execute($connection, 'DELETE FROM delivery_attempts WHERE job_id = :delivery_id', ['delivery_id' => $this->integer($row, 'delivery_id')]);
+        if ($this->hasTable($connection, 'delivery_attempt_cycles')) {
+            $this->execute($connection, 'DELETE FROM delivery_attempt_cycles WHERE delivery_job_id = :delivery_id', ['delivery_id' => $this->integer($row, 'delivery_id')]);
+        }
         $this->execute($connection, 'DELETE FROM delivery_jobs WHERE submission_id = :id', ['id' => $id]);
         $this->execute($connection, 'DELETE FROM submissions WHERE id = :id AND state = \'trashed\'', ['id' => $id]);
         $this->audit($connection, 'spoke.submission.delete', 'success', $timestamp, $publicId);
@@ -504,5 +507,13 @@ final class PdoSubmissionReviewRepository implements SubmissionReviewRepository
         if ($connection->inTransaction()) {
             $connection->rollBack();
         }
+    }
+
+    private function hasTable(PDO $connection, string $table): bool
+    {
+        $statement = $connection->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :table_name LIMIT 1");
+        $statement->execute(['table_name' => $table]);
+
+        return $statement->fetchColumn() !== false;
     }
 }

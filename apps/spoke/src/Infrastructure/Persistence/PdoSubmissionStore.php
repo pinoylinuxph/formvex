@@ -151,6 +151,21 @@ final class PdoSubmissionStore implements SubmissionStore
                 );
             }
             $job->execute($jobParameters);
+            if ($this->hasTable($connection, 'delivery_attempt_cycles')) {
+                $jobRow = $connection->prepare('SELECT id FROM delivery_jobs WHERE job_id = :job_id LIMIT 1');
+                $jobRow->execute(['job_id' => $jobId]);
+                $deliveryJobId = $jobRow->fetchColumn();
+                if (!is_numeric($deliveryJobId)) {
+                    throw new SubmissionFailure('storage_unavailable', 'Formvex could not create the delivery record. Your message was not accepted.');
+                }
+                $cycle = $connection->prepare(
+                    "INSERT INTO delivery_attempt_cycles (delivery_job_id, cycle_number, origin, state, attempt_count, created_at, updated_at) VALUES (:job_id, 1, 'automatic', 'queued', 0, :created_at, :updated_at)",
+                );
+                $cycle->execute(['job_id' => (int) $deliveryJobId, 'created_at' => $timestamp, 'updated_at' => $timestamp]);
+                $cycleId = $this->lastInsertId($connection);
+                $activeCycle = $connection->prepare('UPDATE delivery_jobs SET active_cycle_id = :cycle_id WHERE id = :job_id');
+                $activeCycle->execute(['cycle_id' => $cycleId, 'job_id' => (int) $deliveryJobId]);
+            }
             $connection->commit();
 
             return new SubmissionAccepted($receiptId, (string) $submissionRowId);
@@ -311,6 +326,14 @@ final class PdoSubmissionStore implements SubmissionStore
     {
         $statement = $connection->prepare('SELECT 1 FROM pragma_table_info(:table_name) WHERE name = :column_name LIMIT 1');
         $statement->execute(['table_name' => $table, 'column_name' => $column]);
+
+        return $statement->fetchColumn() !== false;
+    }
+
+    private function hasTable(PDO $connection, string $table): bool
+    {
+        $statement = $connection->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :table_name LIMIT 1");
+        $statement->execute(['table_name' => $table]);
 
         return $statement->fetchColumn() !== false;
     }

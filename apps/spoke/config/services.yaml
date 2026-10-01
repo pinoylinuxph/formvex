@@ -70,6 +70,10 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Spoke\Migrations\Version000012CreateDeliveryReview:
+        autowire: true
+        autoconfigure: true
+
     Formvex\Spoke\Domain\Branding\Contract\BrandingSettingsStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoBrandingSettingsStore
 
@@ -89,11 +93,17 @@ services:
     Formvex\Spoke\Domain\Delivery\Contract\DeliveryJobRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryJobRepository
 
+    Formvex\Spoke\Domain\Delivery\Contract\DeliveryReviewRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryReviewRepository
+
     Formvex\Spoke\Domain\Delivery\Contract\DeliveryPacingStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryPacingStore
 
     Formvex\Spoke\Domain\Delivery\Contract\OperationalAlertRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoOperationalAlertRepository
+
+    Formvex\Spoke\Domain\Delivery\Contract\WorkerHeartbeatStore:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoWorkerHeartbeatStore
 
     Formvex\Spoke\Domain\Delivery\Contract\MailTransport:
         alias: Formvex\Spoke\Infrastructure\Mail\SymfonySmtpDeliveryTransport

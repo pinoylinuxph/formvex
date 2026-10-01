@@ -13,6 +13,7 @@ final readonly class ClaimedDeliveryJob
         public int $attemptNumber,
         public string $leaseToken,
         public ?DeliveryMessageSnapshot $snapshot,
+        public ?int $cycleId = null,
     ) {
     }
 }

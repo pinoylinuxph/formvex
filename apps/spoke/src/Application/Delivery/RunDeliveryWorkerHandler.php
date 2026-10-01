@@ -16,6 +16,7 @@ use Formvex\Spoke\Domain\Delivery\Contract\DeliveryJobRepository;
 use Formvex\Spoke\Domain\Delivery\Contract\DeliveryPacingStore;
 use Formvex\Spoke\Domain\Delivery\Contract\MailTransport;
 use Formvex\Spoke\Domain\Delivery\Contract\OperationalAlertRepository;
+use Formvex\Spoke\Domain\Delivery\Contract\WorkerHeartbeatStore;
 use Formvex\Spoke\Domain\Delivery\DeliveryWorkerResult;
 use Formvex\Spoke\Domain\Installation\Contract\Clock;
 use Formvex\Spoke\Domain\InstallationSettings\Contract\InstallationSettingsStore;
@@ -38,6 +39,7 @@ final readonly class RunDeliveryWorkerHandler
         private MailTransport $transport,
         private DeliveryRetryPolicy $retryPolicy,
         private Clock $clock,
+        private ?WorkerHeartbeatStore $heartbeat = null,
     ) {
     }
 
@@ -55,7 +57,10 @@ final readonly class RunDeliveryWorkerHandler
                 $now = $this->clock->now();
                 if (!$this->pacing->tryConsume($paths, $now, $settings->smtpAttemptsPerMinute)) {
                     $deferred++;
-                    return new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred);
+                    $result = new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred);
+                    $this->heartbeat?->recordSuccess($paths, $this->clock->now(), $result);
+
+                    return $result;
                 }
                 $alertToken = hash('sha256', bin2hex(random_bytes(16)) . $now->format('U.u'));
                 $alert = $this->alerts->claimDueAlert($paths, $now, $alertToken, $now->add(new DateInterval('PT' . self::LEASE_SECONDS . 'S')));
@@ -120,7 +125,10 @@ final readonly class RunDeliveryWorkerHandler
                 };
             }
 
-            return new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred);
+            $result = new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred);
+            $this->heartbeat?->recordSuccess($paths, $this->clock->now(), $result);
+
+            return $result;
         } catch (Throwable) {
             return new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred, false);
         }

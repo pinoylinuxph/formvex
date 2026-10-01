@@ -920,6 +920,24 @@ h2 {
   color: var(--fv-color-danger-content);
 }
 
+.fv-alert-warning {
+  border-color: var(--fv-color-warning-border);
+  background: var(--fv-color-warning-bg);
+  color: var(--fv-color-warning-content);
+}
+
+.fv-alert-critical {
+  border-color: var(--fv-color-danger-border);
+  background: var(--fv-color-danger-bg);
+  color: var(--fv-color-danger-content);
+}
+
+.fv-alert-success {
+  border-color: var(--fv-color-success-border);
+  background: var(--fv-color-success-bg);
+  color: var(--fv-color-success-content);
+}
+
 .fv-filter-bar {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
