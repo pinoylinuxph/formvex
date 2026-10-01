@@ -24,7 +24,7 @@ test('discovers the protected Logoslab form without changing its DOM or collecti
 
   await page.addScriptTag({ type: 'module', url: '/build/client.js' });
   await expect(page.locator('[data-formvex-discovery-result]')).toHaveText(
-    'Formvex discovery completed. Return to the local Formvex portal to review the detected forms.',
+    'Discovery completed. Return to the local administration portal to review the detected forms.',
   );
 
   const formAfter = await page.locator('#contactForm').evaluate((form) => form.outerHTML);

@@ -1,0 +1,109 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}Submission review · {{ branding.brandName }}{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    <nav class="fv-breadcrumbs" aria-label="Breadcrumbs">
+        <a href="{{ path('spoke_admin_home') }}">Overview</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ path('spoke_admin_submissions') }}{% if queryString %}?{{ queryString }}{% endif %}">Submissions</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Review</span>
+    </nav>
+
+    {% include '@platform_ui/components/feedback.html.twig' with {
+        message: message,
+        title: messageTitle|default('Submission review'),
+        variant: messageVariant|default('information'),
+    } only %}
+
+    {% if details is null %}
+        {% include '@platform_ui/components/empty_state.html.twig' with {
+            eyebrow: 'Unavailable',
+            headingId: 'submission-detail-error-heading',
+            title: messageTitle|default('Submission not available'),
+            message: message|default('The requested submission cannot be displayed.'),
+            actionLabel: 'Return to submissions',
+            actionHref: path('spoke_admin_submissions'),
+        } only %}
+    {% else %}
+        <header class="fv-page-header">
+            <div>
+                <p class="fv-eyebrow">{{ details.qualificationTest ? 'Qualification test' : 'Visitor submission' }}</p>
+                <h1>{{ details.formName }}</h1>
+                <p class="fv-page-description">Accepted {{ details.acceptedAt|date('Y-m-d H:i') }} · Configuration version {{ details.configurationVersion }}</p>
+            </div>
+            <div class="fv-submission-badges">
+                <span class="fv-status-badge">{{ details.lifecycle == 'active' ? 'Active review' : details.lifecycle|capitalize }}</span>
+                <span class="fv-status-badge">{{ details.classification == 'suspected_spam' ? 'Suspected spam' : 'Normal' }}</span>
+            </div>
+        </header>
+
+        <section class="fv-overview-grid fv-submission-metadata" aria-label="Submission metadata">
+            <div class="fv-card"><span class="fv-eyebrow">Delivery</span><strong>{{ details.delivery|capitalize }}</strong><p>Delivery state is read-only on this page.</p></div>
+            <div class="fv-card"><span class="fv-eyebrow">Recipient</span><strong>{{ details.recipientMasked }}</strong><p>The full recipient is not shown in review pages.</p></div>
+            <div class="fv-card"><span class="fv-eyebrow">Page</span><strong>{{ details.pagePath }}</strong><p>Marker: {{ details.formMarker }}</p></div>
+            <div class="fv-card"><span class="fv-eyebrow">Receipt</span><strong>{{ details.receiptId }}</strong><p>Opaque acknowledgement identifier.</p></div>
+        </section>
+
+        <section class="fv-panel" aria-labelledby="submission-actions-heading">
+            <div class="fv-section-heading">
+                <p class="fv-eyebrow">Review actions</p>
+                <h2 id="submission-actions-heading">Update this record</h2>
+                <p>Actions change review metadata only. They do not cancel, rewrite, retry, or resend delivery.</p>
+            </div>
+            <div class="fv-action-bar fv-submission-actions">
+                <div class="fv-action-bar-actions">
+                    {% if details.lifecycle == 'active' %}
+                        <form method="post" action="{{ path('spoke_admin_submission_handled', {submissionId: details.publicId}) }}">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="action_token" value="{{ actionTokens.handled }}"><input type="hidden" name="return_query" value="{{ returnQuery }}">
+                            <button class="fv-button fv-button-primary" type="submit">Mark handled</button>
+                        </form>
+                    {% endif %}
+                    {% if details.classification == 'suspected_spam' and details.lifecycle != 'trash' %}
+                        <form method="post" action="{{ path('spoke_admin_submission_not_spam', {submissionId: details.publicId}) }}">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="action_token" value="{{ actionTokens.not_spam }}"><input type="hidden" name="return_query" value="{{ returnQuery }}">
+                            <button class="fv-button fv-button-secondary" type="submit">Mark not spam</button>
+                        </form>
+                    {% endif %}
+                    {% if details.lifecycle != 'trash' %}
+                        <form method="post" action="{{ path('spoke_admin_submission_trash', {submissionId: details.publicId}) }}" class="fv-confirm-action">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="action_token" value="{{ actionTokens.trash }}"><input type="hidden" name="return_query" value="{{ returnQuery }}">
+                            <label><input type="checkbox" name="confirm" value="1" required> Move this submission to Trash</label>
+                            <button class="fv-button fv-button-secondary" type="submit">Move to Trash</button>
+                        </form>
+                    {% else %}
+                        <form method="post" action="{{ path('spoke_admin_submission_restore', {submissionId: details.publicId}) }}" class="fv-confirm-action">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="action_token" value="{{ actionTokens.restore }}"><input type="hidden" name="return_query" value="{{ returnQuery }}">
+                            <label><input type="checkbox" name="confirm" value="1" required> Restore this submission</label>
+                            <button class="fv-button fv-button-primary" type="submit">Restore</button>
+                        </form>
+                        <form method="post" action="{{ path('spoke_admin_submission_delete', {submissionId: details.publicId}) }}" class="fv-confirm-action fv-danger-action">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}"><input type="hidden" name="action_token" value="{{ actionTokens.delete }}"><input type="hidden" name="return_query" value="{{ returnQuery }}">
+                            <label><input type="checkbox" name="confirm" value="1" required> Permanently delete this record</label>
+                            <button class="fv-button fv-button-danger" type="submit">Permanently delete</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <section class="fv-panel" aria-labelledby="submission-fields-heading">
+            <div class="fv-section-heading"><p class="fv-eyebrow">Stored field snapshot</p><h2 id="submission-fields-heading">Submitted information</h2><p>Values are displayed as escaped text. Long values stay collapsed until you explicitly open them.</p></div>
+            <dl class="fv-submission-fields">
+                {% for field in details.fields %}
+                    <div class="fv-submission-field"><dt>{{ field.label }}</dt><dd>{% if field.missing %}<span class="fv-content-muted">Not present in stored snapshot</span>{% elseif field.value == '' %}<span class="fv-content-muted">Empty</span>{% elseif field.long %}<span>{{ field.preview }}</span> <details><summary>Show full value</summary><div class="fv-long-value">{{ field.value }}</div></details>{% else %}{{ field.value }}{% endif %}</dd></div>
+                {% else %}
+                    <div class="fv-empty-inline">No mapped fields were stored for this record.</div>
+                {% endfor %}
+            </dl>
+        </section>
+
+        <section class="fv-panel" aria-labelledby="submission-history-heading">
+            <div class="fv-section-heading"><p class="fv-eyebrow">Audit history</p><h2 id="submission-history-heading">Review events</h2><p>Only safe action names, outcomes, timestamps, and the opaque submission identity are retained.</p></div>
+            {% if details.auditEvents is empty %}<p class="fv-content-muted">No review actions have been recorded.</p>{% else %}<div class="fv-table-container"><table class="fv-table"><thead><tr><th scope="col">Event</th><th scope="col">Outcome</th><th scope="col">Time</th></tr></thead><tbody>{% for event in details.auditEvents %}<tr><th scope="row">{{ event.event }}</th><td>{{ event.outcome|capitalize }}</td><td><time datetime="{{ event.occurredAt }}">{{ event.occurredAt|date('Y-m-d H:i') }}</time></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+        </section>
+    {% endif %}
+</div>
+{% endblock %}

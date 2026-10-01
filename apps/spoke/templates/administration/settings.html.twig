@@ -1,6 +1,6 @@
 {% extends 'administration/portal_layout.html.twig' %}
 
-{% block title %}Settings · Formvex{% endblock %}
+{% block title %}Settings · {{ branding.brandName }}{% endblock %}
 
 {% block content %}
 <div class="fv-page">
@@ -63,11 +63,77 @@
     </nav>
 
     {% if activeTab == 'website' %}
+    <section class="fv-panel fv-settings-panel" aria-labelledby="branding-heading">
+        <header class="fv-section-heading">
+            <p class="fv-eyebrow">Installation branding</p>
+            <h2 id="branding-heading">Define the presentation identity</h2>
+            <p>Choose the name, optional slogan, logo, and favicon shown by this local administration portal. These settings do not modify the customer website.</p>
+        </header>
+        <form class="fv-form" method="post" enctype="multipart/form-data" action="{{ path('spoke_admin_settings_branding_update', {tab: 'website'}) }}">
+            <input type="hidden" name="_token" value="{{ csrfToken }}">
+            <div class="fv-settings-grid">
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'brand-name',
+                    name: 'brand_name',
+                    label: 'Brand name',
+                    value: formData.brand_name,
+                    maxlength: 80,
+                    help: 'Required. Plain text up to 80 characters. Default: Noname.',
+                    error: fieldErrors.brand_name|default(null),
+                } only %}
+                {% include '@platform_ui/components/settings_field.html.twig' with {
+                    id: 'company-slogan',
+                    name: 'slogan',
+                    label: 'Company slogan (optional)',
+                    value: formData.slogan,
+                    maxlength: 160,
+                    help: 'Plain text up to 160 characters.',
+                    error: fieldErrors.slogan|default(null),
+                } only %}
+            </div>
+            <label class="fv-checkbox" for="show-slogan">
+                <input id="show-slogan" name="show_slogan" type="checkbox" value="1"{% if formData.show_slogan == '1' %} checked{% endif %}>
+                <span>Display the slogan on sign-in, logout, and the administration shell</span>
+            </label>
+            {% if fieldErrors.branding_switch|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.branding_switch }}</p>{% endif %}
+            <div class="fv-settings-grid">
+                <div class="fv-field">
+                    <label for="branding-logo">Logo</label>
+                    <input class="fv-input" id="branding-logo" name="logo" type="file" accept="image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg">
+                    <p class="fv-field-help">PNG, JPEG, or static SVG. Maximum 2 MiB and 2,000 × 1,000 pixels.</p>
+                    {% if branding.logoUrl %}
+                        <div class="fv-branding-preview"><img src="{{ branding.logoUrl }}" alt="Current logo" width="96" height="48"></div>
+                        <label class="fv-checkbox" for="remove-logo"><input id="remove-logo" name="remove_logo" type="checkbox" value="1"> Remove current logo and use the built-in default</label>
+                    {% endif %}
+                    {% if fieldErrors.branding_logo|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.branding_logo }}</p>{% endif %}
+                </div>
+                <div class="fv-field">
+                    <label for="branding-favicon">Favicon</label>
+                    <input class="fv-input" id="branding-favicon" name="favicon" type="file" accept="image/png,image/x-icon,.png,.ico">
+                    <p class="fv-field-help">PNG or ICO. Maximum 256 KiB and 256 × 256 pixels.</p>
+                    {% if branding.faviconUrl %}
+                        <div class="fv-branding-preview"><img src="{{ branding.faviconUrl }}" alt="Current favicon" width="32" height="32"></div>
+                        <label class="fv-checkbox" for="remove-favicon"><input id="remove-favicon" name="remove_favicon" type="checkbox" value="1"> Remove current favicon</label>
+                    {% endif %}
+                    {% if fieldErrors.branding_favicon|default(null) %}<p class="fv-field-error" role="alert">{{ fieldErrors.branding_favicon }}</p>{% endif %}
+                </div>
+            </div>
+            <div class="fv-branding-live-preview" aria-label="Branding preview">
+                <p class="fv-eyebrow">Preview</p>
+                <div class="fv-brand"><span class="fv-brand-mark">{{ branding.brandMark }}</span><span class="fv-brand-copy"><span class="fv-brand-wordmark">{{ formData.brand_name }}</span>{% if formData.show_slogan == '1' and formData.slogan != '' %}<span class="fv-brand-slogan">{{ formData.slogan }}</span>{% endif %}</span></div>
+            </div>
+            {% include '@platform_ui/components/form_action_bar.html.twig' with {
+                helpText: 'Branding changes apply to this local installation and use versioned public assets.',
+                submitLabel: 'Save branding',
+            } only %}
+        </form>
+    </section>
+
     <section class="fv-panel fv-settings-panel" aria-labelledby="identity-heading">
         <header class="fv-section-heading">
             <p class="fv-eyebrow">Website identity</p>
             <h2 id="identity-heading">Identify this website</h2>
-            <p>These values identify the website connected to this local Formvex installation.</p>
+            <p>These values identify the website connected to this local installation.</p>
         </header>
         <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_identity_update', {tab: 'website'}) }}">
             <input type="hidden" name="_token" value="{{ csrfToken }}">
@@ -77,7 +143,7 @@
                     name: 'website_display_name',
                     label: 'Website display name',
                     value: formData.website_display_name,
-                    help: 'Shown in the Formvex administration header.',
+                    help: 'Shown as the website context in the administration header.',
                     error: fieldErrors.website_display_name|default(null),
                 } only %}
                 {% include '@platform_ui/components/settings_field.html.twig' with {
@@ -86,7 +152,7 @@
                     label: 'Operational-alert email',
                     type: 'email',
                     value: formData.operational_alert_email,
-                    help: 'Formvex uses this address for administrator-visible operational notifications.',
+                    help: 'This installation uses this address for administrator-visible operational notifications.',
                     error: fieldErrors.operational_alert_email|default(null),
                 } only %}
                 {% include '@platform_ui/components/settings_field.html.twig' with {
@@ -121,7 +187,7 @@
         <header class="fv-section-heading">
             <p class="fv-eyebrow">SMTP delivery</p>
             <h2 id="smtp-heading">Configure outgoing email</h2>
-            <p>SMTP credentials stay in private local storage. Formvex never displays the saved password.</p>
+            <p>SMTP credentials stay in private local storage. The saved password is never displayed.</p>
         </header>
         <form class="fv-form" method="post" action="{{ path('spoke_admin_settings_smtp_update', {tab: 'email'}) }}">
             <input type="hidden" name="_token" value="{{ csrfToken }}">
@@ -340,7 +406,7 @@
         <header class="fv-section-heading">
             <p class="fv-eyebrow">Explicit action</p>
             <h2 id="smtp-test-heading">Send a test email</h2>
-            <p>Enter one address where you want to receive the test. Formvex sends no test automatically when this page opens or when settings are saved.</p>
+            <p>Enter one address where you want to receive the test. No test is sent automatically when this page opens or when settings are saved.</p>
         </header>
         {% if settings.smtpReady and settings.testState.status.value == 'passed' and settings.testState.testedRevision == settings.settings.smtpConfigurationRevision %}
             <div class="fv-alert" role="status"><strong>SMTP test passed.</strong><span>{{ settings.testState.summary }}</span></div>

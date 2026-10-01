@@ -17,7 +17,8 @@
     </script>
     <link rel="stylesheet" href="/build/formvex-ui.css">
     <script type="module" src="/build/spoke-admin.js" defer></script>
-    <title>{% block title %}{{ pageTitle|default('Formvex administration') }}{% endblock %}</title>
+    {% if branding.faviconUrl %}<link rel="icon" href="{{ branding.faviconUrl }}">{% endif %}
+    <title>{% block title %}{{ pageTitle|default(branding.brandName ~ ' administration') }}{% endblock %}</title>
 </head>
 <body class="fv-app" data-sidebar-state="{{ sidebarState }}">
 <a class="fv-skip-link" href="#main-content">Skip to main content</a>
@@ -27,9 +28,8 @@
             <span aria-hidden="true">☰</span>
             <span class="fv-visually-hidden">Open navigation</span>
         </button>
-        <a class="fv-brand" href="{{ path('spoke_admin_home') }}" aria-label="Formvex overview">
-            <span class="fv-brand-mark" aria-hidden="true">F</span>
-            <span class="fv-brand-wordmark">Formvex</span>
+        <a class="fv-brand" href="{{ path('spoke_admin_home') }}" aria-label="{{ branding.brandName }} overview">
+            {% include '@platform_ui/components/brand_identity.html.twig' %}
         </a>
         <span class="fv-navbar-divider" aria-hidden="true">·</span>
         <span class="fv-navbar-context">{{ websiteName }}</span>
@@ -63,7 +63,7 @@
         <span aria-hidden="true">‹</span>
         <span class="fv-sidebar-collapse-label">Collapse navigation</span>
     </button>
-    <nav class="fv-nav" aria-label="Local Spoke">
+    <nav class="fv-nav" aria-label="Primary navigation">
         <ul class="fv-nav-list">
             {% for item in navItems %}
                 <li>

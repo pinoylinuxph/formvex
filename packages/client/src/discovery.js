@@ -300,7 +300,7 @@ export async function runDiscovery({
     result = {
       error: {
         message:
-          'Formvex could not contact the local discovery endpoint. Return to the portal and try again.',
+          'The local discovery service could not be reached. Return to the portal and try again.',
       },
     };
   }
@@ -320,9 +320,9 @@ function showDiscoveryResult(documentRef, success, result) {
   notice.setAttribute('role', success ? 'status' : 'alert');
   notice.setAttribute('data-formvex-discovery-result', 'true');
   notice.textContent = success
-    ? 'Formvex discovery completed. Return to the local Formvex portal to review the detected forms.'
+    ? 'Discovery completed. Return to the local administration portal to review the detected forms.'
     : result?.error?.message ||
-      'Formvex discovery could not be completed. Return to the portal and try again.';
+      'Discovery could not be completed. Return to the portal and try again.';
   documentRef.body.append(notice);
 }
 

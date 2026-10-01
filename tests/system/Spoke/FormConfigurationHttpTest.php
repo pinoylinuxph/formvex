@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Formvex\Tests\System\Spoke;
 
+use Formvex\Spoke\Application\Branding\BrandingService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Console\BootstrapAdministratorCommand;
 use Formvex\Spoke\Console\InstallCommand;
@@ -149,6 +150,14 @@ final class FormConfigurationHttpTest extends KernelTestCase
         $published = $this->request('POST', '/formvex/forms/' . $publicFormId . '/publish', ['_token' => $csrf, 'revision' => '1'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
         self::assertSame(Response::HTTP_OK, $published->getStatusCode());
         $this->activate($publicFormId);
+        self::getContainer()->get(BrandingService::class)->save(
+            $this->temporaryRoot . '/formvex',
+            ['brand_name' => 'Acme Portal', 'slogan' => '', 'show_slogan' => '0'],
+            null,
+            null,
+            false,
+            false,
+        );
 
         $resolved = $this->request('GET', '/formvex/api/v1/forms/resolve', [
             'schema_version' => '1',
@@ -159,6 +168,7 @@ final class FormConfigurationHttpTest extends KernelTestCase
         $body = json_decode((string) $resolved->getContent(), true, 4, JSON_THROW_ON_ERROR);
         self::assertSame($publicFormId, $body['public_form_id']);
         self::assertSame(1, $body['configuration_version']);
+        self::assertSame('Acme Portal', $body['branding']['brand_name']);
         self::assertArrayNotHasKey('recipient', $body);
         self::assertArrayNotHasKey('subject', $body);
         self::assertSame('https://logoslab.xyz', $resolved->headers->get('Access-Control-Allow-Origin'));
@@ -214,6 +224,14 @@ final class FormConfigurationHttpTest extends KernelTestCase
 
         $published = $this->request('POST', '/formvex/forms/' . $publicFormId . '/publish', ['_token' => $csrf, 'revision' => '1'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
         self::assertSame(Response::HTTP_OK, $published->getStatusCode());
+        self::getContainer()->get(BrandingService::class)->save(
+            $this->temporaryRoot . '/formvex',
+            ['brand_name' => 'Acme Portal', 'slogan' => '', 'show_slogan' => '0'],
+            null,
+            null,
+            false,
+            false,
+        );
         $started = $this->request('POST', '/formvex/forms/' . $publicFormId . '/qualification/start', ['_token' => $csrf, 'revision' => '2'], ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf]);
         self::assertSame(Response::HTTP_OK, $started->getStatusCode());
         preg_match('/formvex_qualification=([A-Za-z0-9_-]+)/', (string) $started->getContent(), $capabilityMatches);
@@ -232,6 +250,7 @@ final class FormConfigurationHttpTest extends KernelTestCase
         self::assertSame(Response::HTTP_CREATED, $redeemed->getStatusCode());
         $redeemedBody = json_decode((string) $redeemed->getContent(), true, 8, JSON_THROW_ON_ERROR);
         self::assertArrayHasKey('qualification_token', $redeemedBody);
+        self::assertSame('Acme Portal', $redeemedBody['branding']['brand_name']);
         self::assertArrayNotHasKey('recipient', $redeemedBody);
 
         $submitted = $this->jsonRequest('POST', '/formvex/api/v1/qualification/submissions', [

@@ -15,10 +15,11 @@ final readonly class FormResolutionResponse
         public bool $captchaEnabled = false,
         public string $captchaProvider = 'turnstile',
         public string $captchaSiteKey = '',
+        public string $brandName = 'Noname',
     ) {
     }
 
-    /** @return array{schema_version: int, public_form_id: string, configuration_version: int, form_marker: string, captcha: array{enabled: bool, provider: string, site_key: string}} */
+    /** @return array{schema_version: int, public_form_id: string, configuration_version: int, form_marker: string, captcha: array{enabled: bool, provider: string, site_key: string}, branding: array{brand_name: string}} */
     public function toArray(): array
     {
         return [
@@ -30,6 +31,9 @@ final readonly class FormResolutionResponse
                 'enabled' => $this->captchaEnabled,
                 'provider' => $this->captchaProvider,
                 'site_key' => $this->captchaEnabled ? $this->captchaSiteKey : '',
+            ],
+            'branding' => [
+                'brand_name' => $this->brandName,
             ],
         ];
     }

@@ -1,6 +1,6 @@
 {% extends 'administration/portal_layout.html.twig' %}
 
-{% block title %}Discover forms · Formvex{% endblock %}
+{% block title %}Discover forms · {{ branding.brandName }}{% endblock %}
 
 {% block content %}
 <div class="fv-page">
@@ -14,7 +14,7 @@
 
     {% include '@platform_ui/components/page_header.html.twig' with {
         pageTitle: 'Discover forms on a website page',
-        pageDescription: 'Formvex reads form structure and field metadata only. It never reads visitor-entered values during discovery.',
+        pageDescription: 'This tool reads form structure and field metadata only. It never reads visitor-entered values during discovery.',
     } only %}
 
     {% include '@platform_ui/components/feedback.html.twig' with {
@@ -30,7 +30,7 @@
             <div class="fv-section-heading">
                 <p class="fv-eyebrow">Browser step</p>
                 <h2 id="discovery-session-heading">Open the selected page</h2>
-                <p>This one-time discovery link expires at <time datetime="{{ expiresAt }}">{{ expiresAt|date('Y-m-d H:i:s T') }}</time>. Open it in a new tab where the Formvex client script is installed.</p>
+                <p>This one-time discovery link expires at <time datetime="{{ expiresAt }}">{{ expiresAt|date('Y-m-d H:i:s T') }}</time>. Open it in a new tab where the client script is installed.</p>
             </div>
             <a class="fv-button fv-button-primary" href="{{ discoveryUrl }}" target="_blank" rel="noopener">Open page for discovery</a>
             <p class="fv-page-note">The authorization is carried in the URL fragment. The installed script removes it after sending metadata, so it is not sent to the page server.</p>
@@ -57,7 +57,7 @@
                     {% if form.markerGenerated %}
                         <div class="fv-alert fv-alert-warning" role="status">
                             <strong>Website source change required.</strong>
-                            <span>Add <code>data-formvex="{{ form.formMarker }}"</code> to this form before publishing or activating the configuration. Formvex generated this marker because the page did not provide a unique form id.</span>
+                            <span>Add <code>data-formvex="{{ form.formMarker }}"</code> to this form before publishing or activating the configuration. A marker was generated because the page did not provide a unique form id.</span>
                         </div>
                     {% endif %}
 

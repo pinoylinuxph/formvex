@@ -8,6 +8,7 @@ use Formvex\Contracts\V1\Submission\SubmissionAcceptedResponse;
 use Formvex\Contracts\V1\Submission\SubmissionErrorResponse;
 use Formvex\Contracts\V1\Submission\SubmissionFieldError;
 use Formvex\Spoke\Application\Abuse\SubmissionAbuseService;
+use Formvex\Spoke\Application\Branding\BrandingService;
 use Formvex\Spoke\Application\FormActivation\FormActivationService;
 use Formvex\Spoke\Domain\Abuse\Contract\AbuseSettingsStore;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
@@ -33,6 +34,7 @@ final class FormQualificationController extends AbstractController
 {
     public function __construct(
         private readonly FormActivationService $activationService,
+        private readonly BrandingService $brandingService,
         private readonly QualificationRequestResolver $qualificationRequestResolver,
         private readonly SubmissionRequestResolver $submissionRequestResolver,
         private readonly InstallationSettingsStore $settingsStore,
@@ -85,6 +87,9 @@ final class FormQualificationController extends AbstractController
                     'enabled' => $version->captchaEnabled,
                     'provider' => 'turnstile',
                     'site_key' => $version->captchaEnabled ? $version->captchaSiteKey : '',
+                ],
+                'branding' => [
+                    'brand_name' => $this->brandingService->viewModel($this->runtimeConfiguration->applicationRoot)['brandName'],
                 ],
                 'expires_at' => $session->expiresAt->format(DATE_ATOM),
             ], Response::HTTP_CREATED);

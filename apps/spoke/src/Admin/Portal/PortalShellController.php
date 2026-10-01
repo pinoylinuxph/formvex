@@ -35,12 +35,6 @@ final class PortalShellController extends AbstractController
         return $this->renderDestination($request, 'overview');
     }
 
-    #[Route('/formvex/submissions', name: 'spoke_admin_submissions', methods: ['GET'])]
-    public function submissions(Request $request): Response
-    {
-        return $this->renderDestination($request, 'submissions');
-    }
-
     #[Route('/formvex/delivery', name: 'spoke_admin_delivery', methods: ['GET'])]
     public function delivery(Request $request): Response
     {

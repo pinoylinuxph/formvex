@@ -7,6 +7,7 @@ namespace Formvex\Tests\System\Spoke;
 use Formvex\Spoke\Console\BootstrapAdministratorCommand;
 use Formvex\Spoke\Console\InstallCommand;
 use Formvex\Spoke\Kernel;
+use PDO;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpFoundation\Cookie;
@@ -280,6 +281,75 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertStringContainsString('Logoslab Production', $saved->getContent());
     }
 
+    public function testSubmissionReviewIsAuthenticatedBoundedAndEscapesStoredValues(): void
+    {
+        $this->seedSubmission();
+        [$session, $csrf] = $this->authenticateAdministrator();
+
+        $list = $this->request('GET', '/formvex/submissions?page_size=101&sort=unsafe', [], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+        self::assertSame(Response::HTTP_OK, $list->getStatusCode());
+        self::assertStringContainsString('Filter corrected', (string) $list->getContent());
+        self::assertStringContainsString('Contact form', (string) $list->getContent());
+        self::assertStringNotContainsString('owner@example.com', (string) $list->getContent());
+
+        $detail = $this->request('GET', '/formvex/submissions/22222222-2222-4222-8222-222222222222', [], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+        self::assertSame(Response::HTTP_OK, $detail->getStatusCode());
+        self::assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', (string) $detail->getContent());
+        self::assertStringNotContainsString('owner@example.com', (string) $detail->getContent());
+        preg_match('/action="\/formvex\/submissions\/[^\"]+\/handled".*?name="action_token" value="([^\"]+)"/s', (string) $detail->getContent(), $matches);
+        $actionToken = $matches[1] ?? '';
+        self::assertNotSame('', $actionToken);
+
+        $handled = $this->request('POST', '/formvex/submissions/22222222-2222-4222-8222-222222222222/handled', [
+            '_token' => $csrf,
+            'action_token' => $actionToken,
+            'return_query' => '',
+        ], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+        self::assertSame(Response::HTTP_FOUND, $handled->getStatusCode());
+        self::assertStringContainsString('notice=handled', (string) $handled->headers->get('Location'));
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        self::assertSame('handled', $connection->query("SELECT state FROM submissions WHERE public_id = '22222222-2222-4222-8222-222222222222'")->fetchColumn());
+    }
+
+    public function testAdministratorCanSaveBrandingAndItAppearsOnAuthAndPortalSurfaces(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $saved = $this->request(
+            'POST',
+            '/formvex/settings/branding?tab=website',
+            [
+                '_token' => $csrf,
+                'brand_name' => 'Acme Portal',
+                'slogan' => 'Reliable forms for every team',
+                'show_slogan' => '1',
+            ],
+            [
+                'formvex_session' => $session,
+                'formvex_admin_csrf' => $csrf,
+            ],
+        );
+
+        self::assertSame(Response::HTTP_OK, $saved->getStatusCode());
+        self::assertStringContainsString('Branding settings were saved successfully.', (string) $saved->getContent());
+        self::assertStringContainsString('Acme Portal', (string) $saved->getContent());
+        self::assertStringContainsString('Reliable forms for every team', (string) $saved->getContent());
+
+        $login = $this->request('GET', '/formvex/login');
+        self::assertSame(Response::HTTP_OK, $login->getStatusCode());
+        self::assertStringContainsString('Sign in to Acme Portal', (string) $login->getContent());
+        self::assertStringContainsString('Reliable forms for every team', (string) $login->getContent());
+        self::assertStringNotContainsString('Sign in to Formvex', (string) $login->getContent());
+    }
+
     /**
      * @return array{0: string, 1: string}
      */
@@ -347,6 +417,19 @@ final class AdministratorHttpTest extends KernelTestCase
             '--application-root' => $this->temporaryRoot . '/formvex',
             '--web-root' => $this->temporaryRoot . '/web',
         ]));
+    }
+
+    private function seedSubmission(): void
+    {
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $timestamp = '2026-09-30T12:00:00.000000Z';
+        $connection->exec("INSERT INTO form_configurations (id, public_id, display_name, created_at, updated_at) VALUES (1, '11111111-1111-4111-8111-111111111111', 'Contact form', '$timestamp', '$timestamp')");
+        $connection->exec("INSERT INTO form_configuration_versions (id, form_id, version_number, state, revision, recipient, subject, created_at, updated_at) VALUES (1, 1, 1, 'active', 1, 'owner@example.com', 'Contact message', '$timestamp', '$timestamp')");
+        $connection->exec("INSERT INTO form_configuration_version_pages (version_id, host, path, form_marker) VALUES (1, 'example.com', '/', 'contactForm')");
+        $connection->exec("INSERT INTO form_configuration_version_fields (id, version_id, field_key, control_name, control_type, display_label, parameter_key, ordinal, is_required, max_length) VALUES (1, 1, 'message', 'message', 'textarea', 'Message', 'message', 0, 0, 10000)");
+        $connection->exec("INSERT INTO submissions (id, public_id, form_id, configuration_version_id, configuration_version, page_path, form_marker, recipient, subject, fields_json, classification, created_at, updated_at) VALUES (1, '22222222-2222-4222-8222-222222222222', 1, 1, 1, '/', 'contactForm', 'owner@example.com', 'Contact message', '{\"message\":\"<script>alert(1)</script>\"}', 'normal', '$timestamp', '$timestamp')");
+        $connection->exec("INSERT INTO submission_attempts (public_form_id, attempt_id, submission_id, payload_hash, receipt_id, accepted_at, expires_at) VALUES ('11111111-1111-4111-8111-111111111111', 'attempt-0001', 1, 'hash', 'receipt-0001', '$timestamp', '2026-10-01T12:00:00.000000Z')");
+        $connection->exec("INSERT INTO delivery_jobs (id, job_id, submission_id, state, attempt_count, due_at, created_at, updated_at) VALUES (1, 'job-0001', 1, 'sent', 1, '$timestamp', '$timestamp', '$timestamp')");
     }
 
     private function cookieValue(Response $response, string $name): string

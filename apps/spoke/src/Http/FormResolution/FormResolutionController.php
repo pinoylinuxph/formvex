@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Formvex\Spoke\Http\FormResolution;
 
 use Formvex\Contracts\Spoke\FormResolution\FormResolutionResponse;
+use Formvex\Spoke\Application\Branding\BrandingService;
 use Formvex\Spoke\Application\FormConfiguration\FormConfigurationService;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Installation\Contract\Clock;
@@ -22,6 +23,7 @@ final class FormResolutionController extends AbstractController
 {
     public function __construct(
         private readonly FormConfigurationService $formConfigurationService,
+        private readonly BrandingService $brandingService,
         private readonly InstallationSettingsStore $settingsStore,
         private readonly SpokeStorageResolver $storageResolver,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
@@ -82,6 +84,7 @@ final class FormResolutionController extends AbstractController
                 $resolution->captchaEnabled,
                 $resolution->captchaProvider,
                 $resolution->captchaSiteKey,
+                $this->brandingService->viewModel($this->runtimeConfiguration->applicationRoot)['brandName'],
             )->toArray(), Response::HTTP_OK);
             $this->headers($response, $origin);
 

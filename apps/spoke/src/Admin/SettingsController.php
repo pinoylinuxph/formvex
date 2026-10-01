@@ -8,15 +8,18 @@ use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Abuse\SubmissionAbuseSettingsService;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
+use Formvex\Spoke\Application\Branding\BrandingService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Domain\Abuse\AbuseSettingsSnapshot;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
+use Formvex\Spoke\Domain\Branding\BrandingUpload;
 use Formvex\Spoke\Domain\InstallationSettings\Exception\InstallationSettingsFailure;
 use Formvex\Spoke\Domain\InstallationSettings\SettingsSnapshot;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpTestStatus;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Cookie;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -33,6 +36,7 @@ final class SettingsController extends AbstractController
     public function __construct(
         private readonly LocalAdministratorService $administratorService,
         private readonly SettingsRequestResolver $settingsRequestResolver,
+        private readonly BrandingService $brandingService,
         private readonly InstallationSettingsService $settingsService,
         private readonly SubmissionAbuseSettingsService $abuseSettingsService,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
@@ -64,6 +68,48 @@ final class SettingsController extends AbstractController
             'www_alias',
             'operational_alert_email',
         ]);
+    }
+
+    #[Route('/formvex/settings/branding', name: 'spoke_admin_settings_branding_update', methods: ['POST'])]
+    public function saveBranding(Request $request): Response
+    {
+        $context = $this->authenticatedContext($request);
+
+        if ($context === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+
+        if ($context['session']->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        $snapshot = $this->settingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+        $formData = $this->formData($snapshot);
+        $activeTab = $this->settingsTab($request->query->get('tab'), 'website');
+
+        try {
+            $payload = $this->settingsRequestResolver->payload($request, ['_token', 'brand_name', 'slogan', 'show_slogan', 'remove_logo', 'remove_favicon']);
+            $this->assertCsrf($context['session'], $payload['_token'] ?? '');
+            unset($payload['_token']);
+            $formData = array_merge($formData, $payload);
+            $result = $this->brandingService->save(
+                $this->runtimeConfiguration->applicationRoot,
+                $payload,
+                $this->brandingUpload($request, 'logo'),
+                $this->brandingUpload($request, 'favicon'),
+                ($payload['remove_logo'] ?? '0') === '1',
+                ($payload['remove_favicon'] ?? '0') === '1',
+            );
+            $message = $result->cleanupWarning
+                ? 'Branding was saved, but an older asset could not be removed. The new branding is active; review storage cleanup in Maintenance.'
+                : 'Branding settings were saved successfully.';
+
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $this->formData($snapshot), $message, $result->cleanupWarning ? 'warning' : 'success', '', [], null, $activeTab);
+        } catch (AdministratorFailure $failure) {
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $this->administratorMessage($failure), 'danger', '', [], null, $activeTab);
+        } catch (InstallationSettingsFailure $failure) {
+            return $this->renderSettings($request, $this->sessionId($request) ?? '', $snapshot, $formData, $failure->getMessage(), 'danger', '', $failure->fieldErrors, null, $activeTab);
+        }
     }
 
     #[Route('/formvex/settings/smtp', name: 'spoke_admin_settings_smtp_update', methods: ['POST'])]
@@ -244,6 +290,9 @@ final class SettingsController extends AbstractController
         $activeTab = $this->settingsTab($activeTab ?? $request->query->get('tab'), 'website');
         $abuseSnapshot ??= $this->abuseSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
         $formData = array_merge($this->formData($snapshot), [
+            'brand_name' => $this->brandingService->snapshot($this->runtimeConfiguration->applicationRoot)->brandName,
+            'slogan' => $this->brandingService->snapshot($this->runtimeConfiguration->applicationRoot)->slogan,
+            'show_slogan' => $this->brandingService->snapshot($this->runtimeConfiguration->applicationRoot)->sloganVisible ? '1' : '0',
             'per_form_short_limit' => (string) $abuseSnapshot->settings->perFormShortLimit,
             'per_form_hour_limit' => (string) $abuseSnapshot->settings->perFormHourLimit,
             'installation_hour_limit' => (string) $abuseSnapshot->settings->installationHourLimit,
@@ -316,7 +365,25 @@ final class SettingsController extends AbstractController
             'flood_hour_limit' => '300',
             'trusted_proxy_cidrs' => '',
             'turnstile_secret' => '',
+            'brand_name' => 'Noname',
+            'slogan' => '',
+            'show_slogan' => '0',
         ];
+    }
+
+    private function brandingUpload(Request $request, string $key): ?BrandingUpload
+    {
+        $file = $request->files->get($key);
+
+        if ($file === null) {
+            return null;
+        }
+
+        if (!$file instanceof UploadedFile) {
+            throw new InstallationSettingsFailure('branding_upload_invalid', 'The ' . $key . ' upload was not received as a valid file. Choose the file again.');
+        }
+
+        return new BrandingUpload($file->getPathname(), $file->getClientOriginalName(), $file->getError());
     }
 
     private function settingsTab(mixed $candidate, string $fallback): string

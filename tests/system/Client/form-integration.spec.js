@@ -195,7 +195,7 @@ test('uses a host feedback element and leaves unsupported unrelated forms untouc
   await page.locator('#provided-form input[name="name"]').fill('Ada');
   await page.locator('#provided-form button').click();
   await expect(page.locator('#provided-form [data-formvex-feedback]')).toHaveText(
-    'Formvex could not confirm whether your message was received. Check your connection and try again.',
+    'Noname could not confirm whether your message was received. Check your connection and try again.',
   );
   await expect(page.locator('#provided-form [data-formvex-feedback]')).toHaveAttribute(
     'role',

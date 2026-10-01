@@ -1,11 +1,11 @@
 {% extends 'administration/auth_layout.html.twig' %}
 
-{% block title %}Formvex administrator sign in{% endblock %}
+{% block title %}{{ branding.brandName }} administrator sign in{% endblock %}
 
 {% block content %}
     <header class="fv-auth-title">
         <p class="fv-eyebrow">Local administrator portal</p>
-        <h1>Sign in to Formvex</h1>
+        <h1>Sign in to {{ branding.brandName }}</h1>
         <p>Manage this website's local form-processing installation.</p>
     </header>
     {% if error %}

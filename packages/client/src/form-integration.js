@@ -13,6 +13,7 @@ const MAX_FORMS = 25;
 const MAX_MARKER_LENGTH = 120;
 const MAX_PAGE_PATH_LENGTH = 2048;
 const MAX_FEEDBACK_LENGTH = 512;
+const DEFAULT_BRAND_NAME = 'Noname';
 const ATTEMPT_KEY_PREFIX = 'formvex:attempt:';
 const FORM_MARKER_PATTERN = /^[A-Za-z][A-Za-z0-9_.:-]{0,119}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -272,7 +273,7 @@ export function createSubmissionEnvelope(
   return envelope;
 }
 
-export function mapSubmissionResponse(status, payload) {
+export function mapSubmissionResponse(status, payload, brandName = DEFAULT_BRAND_NAME) {
   if (status === 202 && isAcceptedPayload(payload)) {
     return {
       state: 'accepted',
@@ -284,7 +285,7 @@ export function mapSubmissionResponse(status, payload) {
   }
 
   const error = isObject(payload?.error) ? payload.error : {};
-  const message = boundedText(error.message, defaultMessage(status));
+  const message = boundedText(error.message, defaultMessage(status, safeBrandName(brandName)));
   const fieldErrors = Array.isArray(error.fields)
     ? error.fields.flatMap((field) => {
         if (!isObject(field) || typeof field.field !== 'string') {
@@ -320,7 +321,11 @@ export function mapSubmissionResponse(status, payload) {
     return { state: 'uncertain', message, fieldErrors };
   }
 
-  return { state: 'uncertain', message: defaultMessage(status), fieldErrors };
+  return {
+    state: 'uncertain',
+    message: defaultMessage(status, safeBrandName(brandName)),
+    fieldErrors,
+  };
 }
 
 function attachForm(
@@ -391,7 +396,7 @@ function attachForm(
       state = 'unavailable';
       renderFeedback(form, documentRef, {
         state,
-        message: 'Formvex could not prepare this message. Please try again.',
+        message: `${safeBrandName(resolution)} could not prepare this message. Please try again.`,
         fieldErrors: [],
       });
       restoreSubmitControls(form, originalDisabledState);
@@ -452,12 +457,15 @@ async function submitEnvelope(resolution, envelope, { fetchImpl, qualificationTo
     );
     const payload = await response.json();
 
-    return mapSubmissionResponse(response.status, payload);
+    return mapSubmissionResponse(
+      response.status,
+      payload,
+      safeBrandName(resolution.branding?.brand_name),
+    );
   } catch {
     return {
       state: 'uncertain',
-      message:
-        'Formvex could not confirm whether your message was received. Check your connection and try again.',
+      message: `${safeBrandName(resolution)} could not confirm whether your message was received. Check your connection and try again.`,
       fieldErrors: [],
     };
   }
@@ -517,6 +525,7 @@ function controlValue(control, type) {
 
 function isResolutionPayload(payload, marker) {
   const captcha = payload?.captcha;
+  const branding = payload?.branding;
 
   return (
     isObject(payload) &&
@@ -527,6 +536,8 @@ function isResolutionPayload(payload, marker) {
     Number.isInteger(payload.configuration_version) &&
     payload.configuration_version > 0 &&
     payload.form_marker === marker &&
+    (!branding ||
+      (isObject(branding) && safeBrandName(branding.brand_name) === branding.brand_name)) &&
     (!captcha ||
       (isObject(captcha) &&
         typeof captcha.enabled === 'boolean' &&
@@ -667,7 +678,7 @@ function getAttemptId(resolution, pagePath, storageRef, cryptoRef, currentAttemp
   const generated = cryptoRef?.randomUUID?.();
 
   if (!isValidUuid(generated)) {
-    throw new Error('Formvex requires crypto.randomUUID for submission attempts.');
+    throw new Error('Secure submission attempts require crypto.randomUUID.');
   }
 
   try {
@@ -808,7 +819,7 @@ function renderFieldErrors(form, fieldErrors, documentRef, feedbackInstanceId) {
   });
 }
 
-function defaultMessage(status) {
+function defaultMessage(status, brandName = DEFAULT_BRAND_NAME) {
   if (status === 413) {
     return 'This message is too large to send. Shorten it and try again.';
   }
@@ -826,10 +837,10 @@ function defaultMessage(status) {
   }
 
   if (status >= 500 && status <= 599) {
-    return 'Formvex could not accept your message. Please try again.';
+    return `${brandName} could not accept your message. Please try again.`;
   }
 
-  return 'Formvex could not confirm whether your message was received. Check your connection and try again.';
+  return `${brandName} could not confirm whether your message was received. Check your connection and try again.`;
 }
 
 function boundedText(value, fallback) {
@@ -852,6 +863,12 @@ function isValidPagePath(value) {
 
 function safeIdPart(value) {
   return encodeURIComponent(value).replaceAll('%', '-');
+}
+
+function safeBrandName(value) {
+  return typeof value === 'string' && value.trim() !== '' && value.length <= 80
+    ? value.trim()
+    : DEFAULT_BRAND_NAME;
 }
 
 function isValidUuid(value) {

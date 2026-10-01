@@ -1,0 +1,155 @@
+{% extends 'administration/portal_layout.html.twig' %}
+
+{% block title %}Submissions · {{ branding.brandName }}{% endblock %}
+
+{% block content %}
+<div class="fv-page">
+    <nav class="fv-breadcrumbs" aria-label="Breadcrumbs">
+        <a href="{{ path('spoke_admin_home') }}">Overview</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Submissions</span>
+    </nav>
+
+    {% include '@platform_ui/components/page_header.html.twig' with {
+        pageTitle: pageTitle,
+        pageDescription: pageDescription,
+    } only %}
+
+    {% include '@platform_ui/components/feedback.html.twig' with {
+        message: message,
+        title: messageTitle|default('Submission review'),
+        variant: messageVariant|default('information'),
+    } only %}
+
+    <form class="fv-filter-bar" method="get" action="{{ path('spoke_admin_submissions') }}">
+        <div class="fv-filter-field">
+            <label for="submission-form">Form</label>
+            <select id="submission-form" name="form">
+                <option value="">All forms</option>
+                {% for form in forms %}
+                    <option value="{{ form.publicId }}"{% if query.formPublicId == form.publicId %} selected{% endif %}>{{ form.displayName }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="fv-filter-field">
+            <label for="submission-record-type">Record type</label>
+            <select id="submission-record-type" name="record_type">
+                <option value="visitor"{% if query.recordType == 'visitor' %} selected{% endif %}>Visitor submissions</option>
+                <option value="qualification"{% if query.recordType == 'qualification' %} selected{% endif %}>Qualification tests</option>
+                <option value="all"{% if query.recordType == 'all' %} selected{% endif %}>All records</option>
+            </select>
+        </div>
+        <div class="fv-filter-field">
+            <label for="submission-classification">Classification</label>
+            <select id="submission-classification" name="classification">
+                <option value="all"{% if query.classification == 'all' %} selected{% endif %}>All classifications</option>
+                <option value="normal"{% if query.classification == 'normal' %} selected{% endif %}>Normal</option>
+                <option value="suspected_spam"{% if query.classification == 'suspected_spam' %} selected{% endif %}>Suspected spam</option>
+            </select>
+        </div>
+        <div class="fv-filter-field">
+            <label for="submission-lifecycle">Lifecycle</label>
+            <select id="submission-lifecycle" name="lifecycle">
+                <option value="active"{% if query.lifecycle == 'active' %} selected{% endif %}>Active review</option>
+                <option value="handled"{% if query.lifecycle == 'handled' %} selected{% endif %}>Handled</option>
+                <option value="trash"{% if query.lifecycle == 'trash' %} selected{% endif %}>Trash</option>
+                <option value="all"{% if query.lifecycle == 'all' %} selected{% endif %}>All permitted states</option>
+            </select>
+        </div>
+        <div class="fv-filter-field">
+            <label for="submission-delivery">Delivery</label>
+            <select id="submission-delivery" name="delivery">
+                <option value="all"{% if query.delivery == 'all' %} selected{% endif %}>All delivery states</option>
+                <option value="queued"{% if query.delivery == 'queued' %} selected{% endif %}>Queued</option>
+                <option value="processing"{% if query.delivery == 'processing' %} selected{% endif %}>Processing</option>
+                <option value="sent"{% if query.delivery == 'sent' %} selected{% endif %}>Sent</option>
+                <option value="failed"{% if query.delivery == 'failed' %} selected{% endif %}>Failed</option>
+                <option value="uncertain"{% if query.delivery == 'uncertain' %} selected{% endif %}>Uncertain</option>
+            </select>
+        </div>
+        <div class="fv-filter-field">
+            <label for="submission-sort">Sort</label>
+            <select id="submission-sort" name="sort">
+                <option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>Newest accepted</option>
+                <option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>Oldest accepted</option>
+            </select>
+        </div>
+        <div class="fv-filter-field fv-filter-page-size">
+            <label for="submission-page-size">Rows per page</label>
+            <select id="submission-page-size" name="page_size">
+                <option value="25"{% if query.pageSize == 25 %} selected{% endif %}>25</option>
+                <option value="50"{% if query.pageSize == 50 %} selected{% endif %}>50</option>
+                <option value="100"{% if query.pageSize == 100 %} selected{% endif %}>100</option>
+            </select>
+        </div>
+        <div class="fv-filter-actions">
+            <button class="fv-button fv-button-primary" type="submit">Apply filters</button>
+            <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_submissions') }}">Reset</a>
+        </div>
+    </form>
+
+    {% if result is null %}
+        {% include '@platform_ui/components/empty_state.html.twig' with {
+            eyebrow: 'Storage unavailable',
+            headingId: 'submission-error-heading',
+            title: 'The submission list is unavailable',
+            message: 'The database could not provide a safe result. Correct the local storage problem and reload this page.',
+        } only %}
+    {% elseif result.items is empty %}
+        {% include '@platform_ui/components/empty_state.html.twig' with {
+            eyebrow: 'No matching records',
+            headingId: 'submission-empty-heading',
+            title: 'There are no submissions to review',
+            message: 'Accepted visitor submissions matching the selected filters will appear here. Qualification tests are hidden unless you select them explicitly.',
+        } only %}
+    {% else %}
+        <section class="fv-panel" aria-labelledby="submission-list-heading">
+            <div class="fv-section-heading fv-submission-list-heading">
+                <div>
+                    <p class="fv-eyebrow">Review inventory</p>
+                    <h2 id="submission-list-heading">{{ result.total }} record{% if result.total != 1 %}s{% endif %}</h2>
+                </div>
+                <span class="fv-page-note">Page {{ result.page }} of {{ result.pageCount }}</span>
+            </div>
+            <div class="fv-table-container" tabindex="0" aria-label="Submission review table">
+                <table class="fv-table">
+                    <thead>
+                    <tr>
+                        <th scope="col">Accepted</th>
+                        <th scope="col">Form</th>
+                        <th scope="col">Classification</th>
+                        <th scope="col">Lifecycle</th>
+                        <th scope="col">Delivery</th>
+                        <th scope="col">Recipient</th>
+                        <th scope="col"><span class="fv-visually-hidden">Action</span></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for item in result.items %}
+                        <tr>
+                            <td><time datetime="{{ item.acceptedAt }}">{{ item.acceptedAt|date('Y-m-d H:i') }}</time></td>
+                            <th scope="row">
+                                <span>{{ item.formName }}</span>
+                                {% if item.qualificationTest %}<span class="fv-status-badge">Qualification test</span>{% endif %}
+                            </th>
+                            <td>{{ item.classification == 'suspected_spam' ? 'Suspected spam' : 'Normal' }}</td>
+                            <td>{{ item.lifecycle == 'active' ? 'Active review' : item.lifecycle|capitalize }}</td>
+                            <td>{{ item.delivery|capitalize }}</td>
+                            <td>{{ item.recipientMasked }}</td>
+                            <td><a class="fv-button fv-button-secondary fv-button-small" href="{{ path('spoke_admin_submission_detail', {submissionId: item.publicId}) }}{% if queryString %}?{{ queryString }}{% endif %}">Review</a></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% if pagination is not empty %}
+            <nav class="fv-pagination" aria-label="Submission pages">
+                {% for page in pagination %}
+                    {% if page.current %}<span class="fv-pagination-current" aria-current="page">{{ page.page }}</span>{% else %}<a href="{{ page.href }}">{{ page.page }}</a>{% endif %}
+                {% endfor %}
+            </nav>
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

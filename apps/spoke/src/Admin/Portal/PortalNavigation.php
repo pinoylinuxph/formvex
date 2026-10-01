@@ -22,7 +22,7 @@ final class PortalNavigation
         ],
         'submissions' => [
             'label' => 'Submissions',
-            'description' => 'Review, classification, export, restoration, and permitted deletion.',
+            'description' => 'Review, classification, restoration, and permitted deletion.',
             'route' => 'spoke_admin_submissions',
             'icon' => 'submissions',
         ],

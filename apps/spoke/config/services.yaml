@@ -18,6 +18,9 @@ services:
     Formvex\Spoke\Domain\Submission\Contract\SubmissionStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoSubmissionStore
 
+    Formvex\Spoke\Domain\SubmissionReview\Contract\SubmissionReviewRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoSubmissionReviewRepository
+
     Formvex\Spoke\:
         resource: '../src/'
         exclude:
@@ -58,6 +61,30 @@ services:
     Formvex\Spoke\Migrations\Version000009CreateFormActivation:
         autowire: true
         autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000010CreateInstallationBranding:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000011CreateSubmissionReview:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Domain\Branding\Contract\BrandingSettingsStore:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoBrandingSettingsStore
+
+    Formvex\Spoke\Domain\Branding\Contract\BrandingAssetValidator:
+        alias: Formvex\Spoke\Infrastructure\Branding\SafeBrandingAssetValidator
+
+    Formvex\Spoke\Domain\Branding\Contract\BrandingAssetStore:
+        alias: Formvex\Spoke\Infrastructure\Branding\LocalBrandingAssetStore
+
+    Formvex\Spoke\Infrastructure\Branding\LocalBrandingAssetStore:
+        arguments:
+            $publicRoot: '%kernel.project_dir%/public'
+
+    Formvex\Spoke\Infrastructure\Twig\BrandingTwigExtension:
+        tags: ['twig.extension']
 
     Formvex\Spoke\Domain\Delivery\Contract\DeliveryJobRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryJobRepository
@@ -100,5 +127,9 @@ services:
             $applicationRoot: '%env(string:FORMVEX_APPLICATION_ROOT)%'
 
     Formvex\Spoke\Infrastructure\Security\LoginCsrfTokenManager:
+        arguments:
+            $applicationSecret: '%env(string:FORMVEX_SPOKE_APP_SECRET)%'
+
+    Formvex\Spoke\Infrastructure\Security\AdminActionTokenManager:
         arguments:
             $applicationSecret: '%env(string:FORMVEX_SPOKE_APP_SECRET)%'
