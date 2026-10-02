@@ -240,6 +240,7 @@ final class DeliveryReviewController extends AbstractController
             'websiteName' => 'Local Spoke',
             'administratorName' => 'admin',
             'navItems' => array_values(PortalNavigation::destinations()),
+            'navGroups' => PortalNavigation::groups(),
             'pageTitle' => 'Delivery',
             'pageDescription' => 'Review delivery state, attempt history, and permitted resends.',
         ], $parameters), new Response('', $status));

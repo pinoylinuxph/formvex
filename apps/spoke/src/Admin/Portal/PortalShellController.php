@@ -149,6 +149,7 @@ final class PortalShellController extends AbstractController
             'websiteName' => $settingsSnapshot->settings->websiteDisplayName,
             'administratorName' => 'admin',
             'navItems' => array_values(PortalNavigation::destinations()),
+            'navGroups' => PortalNavigation::groups(),
             'isOverview' => $destination === 'overview',
             'retentionStatus' => $retentionStatus,
             'retentionSettings' => $settingsSnapshot->settings,

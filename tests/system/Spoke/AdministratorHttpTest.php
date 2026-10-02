@@ -153,6 +153,13 @@ final class AdministratorHttpTest extends KernelTestCase
             self::assertStringContainsString('data-theme="light"', $response->getContent(), $destination);
             self::assertStringContainsString('class="fv-nav-icon"', $response->getContent(), $destination);
             self::assertStringNotContainsString('fv-nav-mark', $response->getContent(), $destination);
+            foreach (['Workspace', 'Operations', 'System', 'Configuration'] as $groupLabel) {
+                self::assertStringContainsString(
+                    sprintf('class="fv-nav-group-label">%s</span>', $groupLabel),
+                    $response->getContent(),
+                    $destination,
+                );
+            }
         }
 
         $diagnostics = $this->request('GET', '/formvex/diagnostics', [], [

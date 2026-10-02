@@ -1,7 +1,7 @@
 {% set pageItems = pages|default([]) %}
 {% set currentPageNumber = currentPage|default(1) %}
 {% set totalPageCount = pageCount|default(1) %}
-{% if pageItems is not empty %}
+{% if pageItems is not empty or total|default(0) == 0 %}
     <nav class="fv-pagination" aria-label="{{ ariaLabel|default('Pagination') }}">
         <span class="fv-pagination-range">{{ firstItem|default(0) }}–{{ lastItem|default(0) }} of {{ total|default(0) }}</span>
         {% if pageSizeControl is defined and pageSizeControl is not null %}

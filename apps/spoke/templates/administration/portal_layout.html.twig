@@ -56,7 +56,7 @@
 <div class="fv-sidebar-backdrop" data-sidebar-backdrop hidden></div>
 <aside id="fv-sidebar" class="fv-sidebar" aria-label="Primary navigation" data-sidebar>
     <div class="fv-sidebar-header">
-        <span class="fv-sidebar-title">Workspace</span>
+        <span class="fv-sidebar-title">Navigation</span>
         <button class="fv-icon-button fv-sidebar-close" type="button" data-sidebar-close aria-label="Close navigation">×</button>
     </div>
     <button class="fv-sidebar-collapse" type="button" data-sidebar-toggle aria-controls="fv-sidebar" aria-expanded="{{ sidebarState == 'expanded' ? 'true' : 'false' }}">
@@ -65,12 +65,19 @@
     </button>
     <nav class="fv-nav" aria-label="Primary navigation">
         <ul class="fv-nav-list">
-            {% for item in navItems %}
-                <li>
-                    <a class="fv-nav-link{{ item.route == currentRoute ? ' is-active' : '' }}" href="{{ path(item.route) }}" title="{{ item.label }}"{% if item.route == currentRoute %} aria-current="page"{% endif %}>
-                        {% include '@platform_ui/components/navigation_icon.html.twig' with {name: item.icon} only %}
-                        <span class="fv-nav-label">{{ item.label }}</span>
-                    </a>
+            {% for group in navGroups|default([]) %}
+                <li class="fv-nav-group">
+                    <span class="fv-nav-group-label">{{ group.label }}</span>
+                    <ul class="fv-nav-group-list">
+                        {% for item in group.items %}
+                            <li>
+                                <a class="fv-nav-link{{ item.route == currentRoute ? ' is-active' : '' }}" href="{{ path(item.route) }}" title="{{ item.label }}"{% if item.route == currentRoute %} aria-current="page"{% endif %}>
+                                    {% include '@platform_ui/components/navigation_icon.html.twig' with {name: item.icon} only %}
+                                    <span class="fv-nav-label">{{ item.label }}</span>
+                                </a>
+                            </li>
+                        {% endfor %}
+                    </ul>
                 </li>
             {% endfor %}
         </ul>

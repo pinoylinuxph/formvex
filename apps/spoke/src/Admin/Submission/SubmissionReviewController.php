@@ -466,6 +466,7 @@ final class SubmissionReviewController extends AbstractController
             'websiteName' => 'Local Spoke',
             'administratorName' => 'admin',
             'navItems' => array_values(PortalNavigation::destinations()),
+            'navGroups' => PortalNavigation::groups(),
             'pageTitle' => 'Submissions',
             'pageDescription' => 'Review accepted messages, classification, lifecycle, and delivery state.',
         ], $parameters), new Response('', $status));

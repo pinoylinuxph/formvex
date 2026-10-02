@@ -52,10 +52,49 @@ final class PortalNavigation
         ],
     ];
 
+    /** @var list<array{label: string, destinations: list<string>}> */
+    private const GROUPS = [
+        [
+            'label' => 'Workspace',
+            'destinations' => ['overview', 'forms'],
+        ],
+        [
+            'label' => 'Operations',
+            'destinations' => ['submissions', 'delivery'],
+        ],
+        [
+            'label' => 'System',
+            'destinations' => ['diagnostics', 'maintenance'],
+        ],
+        [
+            'label' => 'Configuration',
+            'destinations' => ['settings'],
+        ],
+    ];
+
     /** @return array<string, array{label: string, description: string, route: string, icon: string}> */
     public static function destinations(): array
     {
         return self::DESTINATIONS;
+    }
+
+    /** @return list<array{label: string, items: list<array{label: string, description: string, route: string, icon: string}>}> */
+    public static function groups(): array
+    {
+        $groups = [];
+        foreach (self::GROUPS as $group) {
+            $items = [];
+            foreach ($group['destinations'] as $destination) {
+                $items[] = self::DESTINATIONS[$destination];
+            }
+
+            $groups[] = [
+                'label' => $group['label'],
+                'items' => $items,
+            ];
+        }
+
+        return $groups;
     }
 
     /** @return list<string> */

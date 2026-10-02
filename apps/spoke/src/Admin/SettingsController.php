@@ -354,6 +354,7 @@ final class SettingsController extends AbstractController
             'websiteName' => $snapshot->settings->websiteDisplayName,
             'administratorName' => 'admin',
             'navItems' => array_values(PortalNavigation::destinations()),
+            'navGroups' => PortalNavigation::groups(),
             'pageTitle' => 'Settings',
             'pageDescription' => 'Configure this local Formvex installation by operational purpose.',
             'activeTab' => $activeTab,

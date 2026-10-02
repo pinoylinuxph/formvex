@@ -648,6 +648,7 @@ final class FormConfigurationController extends AbstractController
             'websiteName' => 'Local Spoke',
             'administratorName' => 'admin',
             'navItems' => array_values(PortalNavigation::destinations()),
+            'navGroups' => PortalNavigation::groups(),
             'pageTitle' => 'Forms',
             'pageDescription' => 'Create, review, publish, and retire local form configurations.',
         ], $extra);
