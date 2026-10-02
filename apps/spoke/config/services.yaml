@@ -15,6 +15,10 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Core\Release\ReleasePackageVerifier:
+        autowire: true
+        autoconfigure: true
+
     Formvex\Spoke\Domain\Submission\Contract\SubmissionStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoSubmissionStore
 
@@ -156,6 +160,37 @@ services:
 
     Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore:
         alias: Formvex\Spoke\Infrastructure\Filesystem\LocalRecoveryHoldStore
+
+    Formvex\Spoke\Domain\Release\Contract\UpgradeMaintenanceStore:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalUpgradeMaintenanceStore
+
+    Formvex\Spoke\Domain\Release\Contract\UpgradeOperationLock:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalUpgradeOperationLock
+
+    Formvex\Spoke\Domain\Release\Contract\UpgradeInFlightTracker:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalUpgradeInFlightTracker
+
+    Formvex\Spoke\Domain\Release\Contract\ReleasePackagePublisher:
+        alias: Formvex\Spoke\Infrastructure\Release\LocalReleasePackagePublisher
+
+    Formvex\Spoke\Domain\Release\Contract\FinalBackupCreator:
+        alias: Formvex\Spoke\Infrastructure\Release\BackupServiceFinalBackupCreator
+
+    Formvex\Spoke\Domain\Release\Contract\ReleaseMigrationApplier:
+        alias: Formvex\Spoke\Infrastructure\Release\InstallationStoreMigrationApplier
+
+    Formvex\Spoke\Domain\Release\Contract\ReleaseHealthChecker:
+        alias: Formvex\Spoke\Infrastructure\Release\HealthCheckReleaseChecker
+
+    Formvex\Spoke\Domain\Release\Contract\ReleaseSchedulerReadiness:
+        alias: Formvex\Spoke\Infrastructure\Release\SchedulerReleaseReadiness
+
+    Formvex\Spoke\Domain\Release\Contract\PairedCheckpointRestorer:
+        alias: Formvex\Spoke\Infrastructure\Release\RestoreServicePairedCheckpointRestorer
+
+    Formvex\Spoke\Application\Release\ReleaseUpgradeService:
+        arguments:
+            $projectRoot: '%kernel.project_dir%'
 
     Formvex\Spoke\Infrastructure\Backup\ZipBackupArchiveStore:
         arguments:

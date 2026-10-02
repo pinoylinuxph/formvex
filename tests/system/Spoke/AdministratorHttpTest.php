@@ -522,6 +522,9 @@ final class AdministratorHttpTest extends KernelTestCase
 
         $maintenance = $this->request('GET', '/formvex/maintenance', [], $cookies);
         self::assertSame(Response::HTTP_OK, $maintenance->getStatusCode());
+        self::assertStringContainsString('Maintenance control', (string) $maintenance->getContent());
+        self::assertStringContainsString('Recovery packages', (string) $maintenance->getContent());
+        self::assertStringContainsString('Lifecycle status', (string) $maintenance->getContent());
         self::assertStringContainsString('Create manual backup', (string) $maintenance->getContent());
         self::assertStringContainsString('Create pre-upgrade backup', (string) $maintenance->getContent());
         self::assertStringNotContainsString($this->temporaryRoot, (string) $maintenance->getContent());

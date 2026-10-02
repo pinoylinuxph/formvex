@@ -55,4 +55,24 @@ final readonly class PrivateStoragePaths
     {
         return $this->runtime . DIRECTORY_SEPARATOR . 'recovery-hold.json';
     }
+
+    public function upgradeMaintenanceFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'upgrade-maintenance.json';
+    }
+
+    public function upgradeLockFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'upgrade.lock';
+    }
+
+    public function upgradeInFlightFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'upgrade-inflight.json';
+    }
+
+    public function upgradeInFlightLockFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'upgrade-inflight.lock';
+    }
 }

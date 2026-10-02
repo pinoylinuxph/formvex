@@ -40,7 +40,7 @@ final class PortalNavigation
         ],
         'maintenance' => [
             'label' => 'Maintenance',
-            'description' => 'Backups, restore, retention, update notices, and maintenance state.',
+            'description' => 'Backups, restore, retention, and recovery state.',
             'route' => 'spoke_admin_maintenance',
             'icon' => 'maintenance',
         ],

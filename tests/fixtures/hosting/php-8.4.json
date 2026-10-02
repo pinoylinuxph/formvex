@@ -1,0 +1,19 @@
+{
+  "profile": "php-8.4-shared-vps",
+  "php": "8.4",
+  "required_extensions": [
+    "ctype",
+    "curl",
+    "iconv",
+    "mbstring",
+    "openssl",
+    "pdo_sqlite",
+    "sodium",
+    "zip"
+  ],
+  "cli": true,
+  "https": true,
+  "private_root_outside_web_root": true,
+  "writable_private_root": true,
+  "scheduler": "explicit-command-access"
+}

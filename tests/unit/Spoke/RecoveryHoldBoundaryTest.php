@@ -9,9 +9,12 @@ use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
 use Formvex\Spoke\Domain\Backup\RecoveryHold;
 use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
+use Formvex\Spoke\Domain\Release\Contract\UpgradeMaintenanceStore;
+use Formvex\Spoke\Domain\Release\UpgradeMaintenanceState;
 use Formvex\Spoke\Http\RecoveryHoldSubscriber;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
@@ -39,6 +42,68 @@ final class RecoveryHoldBoundaryTest extends TestCase
         self::assertNotNull($event->getResponse());
         self::assertSame(503, $event->getResponse()?->getStatusCode());
         self::assertSame('This installation is temporarily unavailable while a server-side recovery operation completes.', $event->getResponse()?->getContent());
+    }
+
+    public function testUpgradeMaintenanceBlocksPublicApiRequestsWithoutExposingReleaseDetails(): void
+    {
+        $event = $this->event('/formvex/api/v1/forms/resolve');
+        $paths = $this->paths();
+        $resolver = new class ($paths) implements SpokeStorageResolver {
+            public function __construct(private readonly PrivateStoragePaths $paths)
+            {
+            }
+
+            public function resolve(string $applicationRoot): PrivateStoragePaths
+            {
+                return $this->paths;
+            }
+
+            public function assertOperatorOwns(PrivateStoragePaths $paths): void
+            {
+            }
+        };
+        $recoveryStore = new class () implements RecoveryHoldStore {
+            public function current(PrivateStoragePaths $paths): ?RecoveryHold
+            {
+                return null;
+            }
+
+            public function activate(PrivateStoragePaths $paths, DateTimeImmutable $startedAt, string $operation, string $reason): void
+            {
+            }
+
+            public function clear(PrivateStoragePaths $paths): void
+            {
+            }
+        };
+        $maintenanceStore = new class () implements UpgradeMaintenanceStore {
+            public function current(PrivateStoragePaths $paths): ?UpgradeMaintenanceState
+            {
+                return new UpgradeMaintenanceState('opaque-operation', '1.0.0', '1.0.1', '000016', '000016', 'draining', new DateTimeImmutable('2026-10-02T00:00:00.000000Z'), new DateTimeImmutable('2026-10-02T00:05:00.000000Z'));
+            }
+
+            public function begin(PrivateStoragePaths $paths, string $operationId, string $currentRelease, string $targetRelease, string $currentSchema, string $targetSchema, DateTimeImmutable $startedAt, DateTimeImmutable $drainDeadlineAt): UpgradeMaintenanceState
+            {
+                throw new RuntimeException('not used');
+            }
+
+            public function transition(PrivateStoragePaths $paths, UpgradeMaintenanceState $state, string $nextState): UpgradeMaintenanceState
+            {
+                throw new RuntimeException('not used');
+            }
+
+            public function clear(PrivateStoragePaths $paths, string $operationId): void
+            {
+                throw new RuntimeException('not used');
+            }
+        };
+
+        new RecoveryHoldSubscriber(new SpokeRuntimeConfiguration('/private/root'), $resolver, $recoveryStore, $maintenanceStore)->onRequest($event);
+
+        self::assertNotNull($event->getResponse());
+        self::assertSame(503, $event->getResponse()?->getStatusCode());
+        self::assertStringContainsString('installation_unavailable', (string) $event->getResponse()?->getContent());
+        self::assertStringNotContainsString('opaque-operation', (string) $event->getResponse()?->getContent());
     }
 
     private function subscriber(): RecoveryHoldSubscriber

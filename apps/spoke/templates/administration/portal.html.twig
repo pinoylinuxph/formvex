@@ -131,32 +131,83 @@
             </section>
         {% endfor %}
     {% elseif destination == 'maintenance' %}
+        {% set maintenanceStatus = recoveryHold ? 'Recovery hold' : 'Ready for maintenance' %}
+        {% set maintenanceSeverity = recoveryHold ? 'danger' : 'success' %}
+        {% set backupStatus = backupError ? 'Unavailable' : (backupPagination.total > 0 ? 'Available' : 'None yet') %}
+        {% set backupSeverity = backupError ? 'warning' : (backupPagination.total > 0 ? 'success' : 'warning') %}
+
+        <section class="fv-maintenance-summary" aria-labelledby="maintenance-summary-heading">
+            <header class="fv-maintenance-summary-header">
+                <div>
+                    <p class="fv-eyebrow">Operations posture</p>
+                    <h2 id="maintenance-summary-heading">Maintenance control</h2>
+                </div>
+                <span class="fv-status-badge fv-status-badge-{{ maintenanceSeverity }}">{{ maintenanceStatus }}</span>
+            </header>
+            <div class="fv-maintenance-status-grid">
+                <div class="fv-maintenance-status-item">
+                    <span>Recovery state</span>
+                    <strong class="fv-maintenance-status-{{ maintenanceSeverity }}">{{ recoveryHold ? 'Action required' : 'Clear' }}</strong>
+                </div>
+                <div class="fv-maintenance-status-item">
+                    <span>Backup inventory</span>
+                    <strong class="fv-maintenance-status-{{ backupSeverity }}">{{ backupStatus }}</strong>
+                </div>
+                <div class="fv-maintenance-status-item">
+                    <span>Retention scheduler</span>
+                    <strong class="fv-maintenance-status-{{ retentionSchedulerJob.severity }}">{{ retentionSchedulerJob.status|replace({'_': ' '})|title }}</strong>
+                </div>
+            </div>
+        </section>
+
         {% if recoveryHold %}
-            <div class="fv-alert fv-alert-danger" role="alert"><strong>Recovery hold is active.</strong><span>The installation is unavailable while the hosting administrator completes or repairs a server-side restore. Portal backup actions are paused.</span></div>
+            <div class="fv-alert fv-alert-danger" role="alert"><strong>Recovery hold is active.</strong><span>The installation is unavailable while the hosting administrator completes or repairs a server-side restore. Backup actions are paused.</span></div>
         {% endif %}
-        <section class="fv-panel" aria-labelledby="backup-actions-heading">
+
+        <section class="fv-maintenance-section" aria-labelledby="backup-actions-heading">
             <header class="fv-section-heading">
-                <p class="fv-eyebrow">Private recovery package</p>
-                <h2 id="backup-actions-heading">Backups</h2>
-                <p>Create a plain ZIP backup for local recovery or before an upgrade. Archives remain private and are never rotated automatically.</p>
+                <p class="fv-eyebrow">Recovery packages</p>
+                <h2 id="backup-actions-heading">Create a backup</h2>
+                <p>Use a manual snapshot for routine recovery or a pre-upgrade snapshot before changing the installation.</p>
             </header>
             {% if backupError %}<div class="fv-alert fv-alert-warning" role="status"><strong>Backup inventory unavailable.</strong><span>{{ backupError }}</span></div>{% endif %}
-            <div class="fv-actions">
-                <form method="post" action="{{ path('spoke_admin_backup_create') }}">
-                    <input type="hidden" name="_token" value="{{ csrfToken }}">
-                    <input type="hidden" name="kind" value="manual">
-                    <button class="fv-button fv-button-primary" type="submit"{% if recoveryHold %} disabled{% endif %}>Create manual backup</button>
-                </form>
-                <form method="post" action="{{ path('spoke_admin_backup_create') }}">
-                    <input type="hidden" name="_token" value="{{ csrfToken }}">
-                    <input type="hidden" name="kind" value="pre_upgrade">
-                    <button class="fv-button fv-button-secondary" type="submit"{% if recoveryHold %} disabled{% endif %}>Create pre-upgrade backup</button>
-                </form>
+            <div class="fv-maintenance-action-grid">
+                <article class="fv-maintenance-action-card">
+                    <div>
+                        <p class="fv-eyebrow">Routine recovery</p>
+                        <h3>Manual backup</h3>
+                        <p>Capture the current private installation state.</p>
+                    </div>
+                    <form method="post" action="{{ path('spoke_admin_backup_create') }}">
+                        <input type="hidden" name="_token" value="{{ csrfToken }}">
+                        <input type="hidden" name="kind" value="manual">
+                        <button class="fv-button fv-button-primary" type="submit"{% if recoveryHold %} disabled{% endif %}>Create manual backup</button>
+                    </form>
+                </article>
+                <article class="fv-maintenance-action-card">
+                    <div>
+                        <p class="fv-eyebrow">Release safety</p>
+                        <h3>Pre-upgrade backup</h3>
+                        <p>Capture a rollback point before an application upgrade.</p>
+                    </div>
+                    <form method="post" action="{{ path('spoke_admin_backup_create') }}">
+                        <input type="hidden" name="_token" value="{{ csrfToken }}">
+                        <input type="hidden" name="kind" value="pre_upgrade">
+                        <button class="fv-button fv-button-secondary" type="submit"{% if recoveryHold %} disabled{% endif %}>Create pre-upgrade backup</button>
+                    </form>
+                </article>
             </div>
-            <p class="fv-page-note">ZIP archives are not encrypted or password-protected. Store downloaded copies securely.</p>
+            <p class="fv-maintenance-note">Archives are plain ZIP files without encryption or password protection. Store downloaded copies securely.</p>
         </section>
-        <section class="fv-panel" aria-labelledby="backup-inventory-heading">
-            <header class="fv-section-heading"><p class="fv-eyebrow">Inventory</p><h2 id="backup-inventory-heading">Available backups</h2></header>
+
+        <section class="fv-maintenance-section fv-maintenance-inventory" aria-labelledby="backup-inventory-heading">
+            <header class="fv-maintenance-section-header">
+                <div>
+                    <p class="fv-eyebrow">Private archive inventory</p>
+                    <h2 id="backup-inventory-heading">Available backups</h2>
+                </div>
+                <span class="fv-maintenance-count">{{ backupPagination.total }} {{ backupPagination.total == 1 ? 'archive' : 'archives' }}</span>
+            </header>
             {% if backupPagination.total == 0 %}
                 {% include '@platform_ui/components/empty_state.html.twig' with { eyebrow: 'No backups', headingId: 'backup-empty-heading', title: 'No completed backups yet', message: 'Create a manual or pre-upgrade backup to make a private recovery package.' } only %}
             {% else %}
@@ -177,7 +228,7 @@
                     next: backupPagination.next,
                     pageSizeControl: {action: path('spoke_admin_maintenance'), id: 'backup-page-size', name: 'backup_page_size', value: backupPagination.pageSize, options: [25, 50, 100], hidden: []}
                 } only %}
-                <p class="fv-page-note">Deletion is permanent. A downloaded plain ZIP contains visitor submissions and private configuration.</p>
+                <p class="fv-maintenance-note">Deletion is permanent. A downloaded archive contains visitor submissions and private configuration.</p>
             {% endif %}
         </section>
         {% for backup in backupPagination.items %}
@@ -191,33 +242,31 @@
                 </section>
             {% endif %}
         {% endfor %}
-        <section class="fv-panel" aria-labelledby="restore-instructions-heading"><header class="fv-section-heading"><p class="fv-eyebrow">Hosting administrator</p><h2 id="restore-instructions-heading">Restore</h2><p>Restore is intentionally server-side. Validate an archive first, then run the restore command with explicit confirmation. A failed restore leaves the installation unavailable for repair.</p></header></section>
-        <section class="fv-panel" aria-labelledby="retention-status-heading">
+        <section class="fv-maintenance-system-grid" aria-label="Recovery and lifecycle controls">
+            <article class="fv-maintenance-section" aria-labelledby="restore-instructions-heading">
+                <header class="fv-section-heading">
+                    <p class="fv-eyebrow">Hosting administrator</p>
+                    <h2 id="restore-instructions-heading">Restore</h2>
+                    <p>Restore is intentionally server-side. Validate an archive first, then run the restore command with explicit confirmation.</p>
+                </header>
+                <span class="fv-status-badge">Server-side operation</span>
+            </article>
+            <article class="fv-maintenance-section" aria-labelledby="retention-status-heading">
             <header class="fv-section-heading">
                 <p class="fv-eyebrow">Retention and cleanup</p>
-                <h2 id="retention-status-heading">Local lifecycle status</h2>
-                <p>Cleanup runs from the server scheduler. Active delivery is deferred safely, and records in Trash remain recoverable for at least seven full days.</p>
+                <h2 id="retention-status-heading">Lifecycle status</h2>
+                <p>Cleanup runs from the server scheduler. Records in Trash remain recoverable for at least seven full days.</p>
             </header>
-            <div class="fv-overview-grid">
-                <article class="fv-card">
-                    <p class="fv-eyebrow">Scheduler status</p>
-                    <h3><span class="fv-status-badge fv-status-badge-{{ retentionSchedulerJob.severity }}">{{ retentionSchedulerJob.status|replace({'_': ' '})|title }}</span></h3>
-                    <p>{{ retentionSchedulerJob.message }} <a href="{{ path('spoke_admin_diagnostics') }}">View scheduler health.</a></p>
-                </article>
-                <article class="fv-card">
-                    <p class="fv-eyebrow">Last run</p>
-                    <h3>{{ retentionStatus.lastScanned }} scanned · {{ retentionStatus.lastDeleted }} deleted</h3>
-                    <p>{{ retentionStatus.lastDeferred }} deferred · {{ retentionStatus.lastFailed }} failed</p>
-                </article>
-                <article class="fv-card">
-                    <p class="fv-eyebrow">Configured policy</p>
-                    <h3>{{ retentionSettings.ordinaryRetentionDays }} / {{ retentionSettings.uncertainRetentionDays }} / {{ retentionSettings.auditRetentionDays }} days</h3>
-                    <p>Ordinary submissions · uncertain deliveries · audit and operational logs</p>
-                </article>
+            <div class="fv-maintenance-facts">
+                <div><span>Scheduler</span><strong><span class="fv-status-badge fv-status-badge-{{ retentionSchedulerJob.severity }}">{{ retentionSchedulerJob.status|replace({'_': ' '})|title }}</span></strong></div>
+                <div><span>Last run</span><strong>{{ retentionStatus.lastScanned }} scanned · {{ retentionStatus.lastDeleted }} deleted</strong></div>
+                <div><span>Policy</span><strong>{{ retentionSettings.ordinaryRetentionDays }} / {{ retentionSettings.uncertainRetentionDays }} / {{ retentionSettings.auditRetentionDays }} days</strong></div>
             </div>
+            <a class="fv-button fv-button-secondary fv-maintenance-inline-action" href="{{ path('spoke_admin_diagnostics') }}">View scheduler health</a>
             {% if retentionStatus.lastErrorCode %}
                 <div class="fv-alert fv-alert-danger" role="alert"><strong>Last cleanup reported an error.</strong><span>Code: {{ retentionStatus.lastErrorCode }}. Review the server command output and run the task again after correcting the reported condition.</span></div>
             {% endif %}
+            </article>
         </section>
     {% else %}
         {% include '@platform_ui/components/empty_state.html.twig' with {

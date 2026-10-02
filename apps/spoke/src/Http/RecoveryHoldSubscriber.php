@@ -6,6 +6,7 @@ namespace Formvex\Spoke\Http;
 
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
+use Formvex\Spoke\Domain\Release\Contract\UpgradeMaintenanceStore;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -20,6 +21,7 @@ final readonly class RecoveryHoldSubscriber implements EventSubscriberInterface
         private SpokeRuntimeConfiguration $runtimeConfiguration,
         private SpokeStorageResolver $storageResolver,
         private RecoveryHoldStore $recoveryHoldStore,
+        private ?UpgradeMaintenanceStore $upgradeMaintenanceStore = null,
     ) {
     }
 
@@ -35,9 +37,11 @@ final readonly class RecoveryHoldSubscriber implements EventSubscriberInterface
         }
         $path = $event->getRequest()->getPathInfo();
         $recoveryStateUnavailable = false;
+        $maintenanceActive = false;
         try {
             $paths = $this->storageResolver->resolve($this->runtimeConfiguration->applicationRoot);
-            if ($this->recoveryHoldStore->current($paths) === null) {
+            $maintenanceActive = $this->upgradeMaintenanceStore?->current($paths) !== null;
+            if (!$maintenanceActive && $this->recoveryHoldStore->current($paths) === null) {
                 return;
             }
         } catch (Throwable) {
@@ -53,21 +57,28 @@ final readonly class RecoveryHoldSubscriber implements EventSubscriberInterface
                 'schema_version' => 1,
                 'error' => [
                     'code' => 'installation_unavailable',
-                    'message' => $recoveryStateUnavailable
-                        ? 'This installation is temporarily unavailable while its recovery state is being checked.'
-                        : 'This installation is temporarily unavailable while a server-side recovery operation completes.',
+                    'message' => $this->unavailableMessage($recoveryStateUnavailable, $maintenanceActive),
                 ],
             ], Response::HTTP_SERVICE_UNAVAILABLE);
         } else {
             $response = new Response(
-                $recoveryStateUnavailable
-                    ? 'This installation is temporarily unavailable while its recovery state is being checked.'
-                    : 'This installation is temporarily unavailable while a server-side recovery operation completes.',
+                $this->unavailableMessage($recoveryStateUnavailable, $maintenanceActive),
                 Response::HTTP_SERVICE_UNAVAILABLE,
             );
         }
         $response->headers->set('Cache-Control', 'no-store, private');
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $event->setResponse($response);
+    }
+
+    private function unavailableMessage(bool $stateUnavailable, bool $maintenanceActive): string
+    {
+        if ($stateUnavailable) {
+            return 'This installation is temporarily unavailable while its recovery state is being checked.';
+        }
+
+        return $maintenanceActive
+            ? 'This installation is temporarily unavailable while a server-side release operation completes.'
+            : 'This installation is temporarily unavailable while a server-side recovery operation completes.';
     }
 }

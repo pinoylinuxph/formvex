@@ -82,6 +82,8 @@
     ],
     "js:qa": "npm run qa",
     "assets:build": "npm run build",
+    "release:assemble": "php tools/release/assemble.php",
+    "release:verify": "php tools/release/verify.php",
     "qa": [
       "@composer validate --strict --no-check-publish",
       "@format:check",

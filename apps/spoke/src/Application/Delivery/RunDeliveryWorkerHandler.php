@@ -21,6 +21,8 @@ use Formvex\Spoke\Domain\Delivery\Contract\WorkerHeartbeatStore;
 use Formvex\Spoke\Domain\Delivery\DeliveryWorkerResult;
 use Formvex\Spoke\Domain\Installation\Contract\Clock;
 use Formvex\Spoke\Domain\InstallationSettings\Contract\InstallationSettingsStore;
+use Formvex\Spoke\Domain\Release\Contract\UpgradeInFlightTracker;
+use Formvex\Spoke\Domain\Release\Contract\UpgradeMaintenanceStore;
 use Formvex\Spoke\Infrastructure\Installation\SpokeRuntimeConfiguration;
 use Throwable;
 
@@ -42,6 +44,8 @@ final readonly class RunDeliveryWorkerHandler
         private Clock $clock,
         private ?WorkerHeartbeatStore $heartbeat = null,
         private ?RecoveryHoldStore $recoveryHoldStore = null,
+        private ?UpgradeMaintenanceStore $upgradeMaintenanceStore = null,
+        private ?UpgradeInFlightTracker $inFlightTracker = null,
     ) {
     }
 
@@ -50,10 +54,19 @@ final readonly class RunDeliveryWorkerHandler
         $claimed = $sent = $retried = $failed = $uncertain = $deferred = 0;
         $limit = max(1, min(self::MAX_BATCH, $command->batchLimit));
         $paths = null;
+        $lease = null;
 
         try {
             $paths = $this->storageResolver->resolve($this->runtimeConfiguration->applicationRoot);
-            if ($this->recoveryHoldStore?->current($paths) !== null) {
+            if ($this->inFlightTracker !== null) {
+                $lease = $this->inFlightTracker->begin($paths, 'delivery');
+                if ($lease === null) {
+                    return new DeliveryWorkerResult(0, 0, 0, 0, 0, 1, false);
+                }
+            }
+            if ($this->recoveryHoldStore?->current($paths) !== null || $this->upgradeMaintenanceStore?->current($paths) !== null) {
+                $this->finishLease($paths, $lease);
+                $lease = null;
                 return new DeliveryWorkerResult(0, 0, 0, 0, 0, 1, false);
             }
             $settings = $this->settingsStore->get($paths);
@@ -65,6 +78,8 @@ final readonly class RunDeliveryWorkerHandler
                     $deferred++;
                     $result = new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred);
                     $this->heartbeat?->recordSuccess($paths, $this->clock->now(), $result);
+                    $this->finishLease($paths, $lease);
+                    $lease = null;
 
                     return $result;
                 }
@@ -133,10 +148,14 @@ final readonly class RunDeliveryWorkerHandler
 
             $result = new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred);
             $this->heartbeat?->recordSuccess($paths, $this->clock->now(), $result);
+            $this->finishLease($paths, $lease);
+            $lease = null;
 
             return $result;
         } catch (Throwable) {
             $result = new DeliveryWorkerResult($claimed, $sent, $retried, $failed, $uncertain, $deferred, false);
+            $this->finishLease($paths, $lease);
+            $lease = null;
             if ($paths !== null) {
                 try {
                     $this->heartbeat?->recordFailure($paths, $this->clock->now(), $result);
@@ -146,6 +165,17 @@ final readonly class RunDeliveryWorkerHandler
             }
 
             return $result;
+        }
+    }
+
+    private function finishLease(?\Formvex\Spoke\Domain\Installation\PrivateStoragePaths $paths, ?string $lease): void
+    {
+        if ($paths !== null && $lease !== null) {
+            try {
+                $this->inFlightTracker?->finish($paths, $lease);
+            } catch (Throwable) {
+                // The bounded drain timeout remains the safe recovery boundary for a stale lease.
+            }
         }
     }
 
