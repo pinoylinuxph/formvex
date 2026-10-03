@@ -23,27 +23,98 @@
     } only %}
 
     {% if isOverview %}
-        <section class="fv-overview-grid" aria-label="Portal status">
-            <article class="fv-card">
-                <p class="fv-eyebrow">Portal state</p>
-                <h2>Shell ready</h2>
-                <p>The authenticated local portal foundation is available for the next approved feature units.</p>
-            </article>
-            <article class="fv-card">
-                <p class="fv-eyebrow">Theme</p>
-                <h2>{{ currentTheme|capitalize }}</h2>
-                <p>Use the theme control in the top navigation to switch between light and dark.</p>
-            </article>
-            <article class="fv-card">
-                <p class="fv-eyebrow">Navigation</p>
-                <h2>{{ navItems|length }} areas</h2>
-                <p>Each approved local Spoke destination has a protected shell route.</p>
-            </article>
+        <div class="fv-overview-toolbar">
+            <p class="fv-overview-snapshot" role="status">{{ overview.snapshotLabel }}</p>
+            <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_home') }}">Refresh status</a>
+        </div>
+
+        {% if overview.warnings is not empty %}
+            <section class="fv-overview-attention" aria-labelledby="overview-attention-heading">
+                <header class="fv-section-heading">
+                    <p class="fv-eyebrow">Action required</p>
+                    <h2 id="overview-attention-heading">Needs attention</h2>
+                    <p>These notices remain visible until the underlying status changes.</p>
+                </header>
+                <div class="fv-overview-warning-list">
+                    {% for warning in overview.warnings %}
+                        <article class="fv-alert fv-alert-{{ warning.severity }}" role="alert">
+                            <div>
+                                <strong>{{ warning.title }}</strong>
+                                <span>{{ warning.message }}</span>
+                            </div>
+                            <a class="fv-button fv-button-secondary" href="{{ path(warning.route) }}">{{ warning.routeLabel }}</a>
+                        </article>
+                    {% endfor %}
+                </div>
+            </section>
+        {% else %}
+            <div class="fv-alert fv-alert-success" role="status"><strong>No attention required.</strong><span>The current local status snapshot has no recorded action requiring administrator review.</span></div>
+        {% endif %}
+
+        <section class="fv-overview-card-grid" aria-label="Operational summary">
+            {% for card in overview.cards %}
+                <article class="fv-overview-card fv-overview-card-{{ card.severity }}">
+                    <header class="fv-overview-card-header">
+                        <div>
+                            <p class="fv-eyebrow">{{ card.label }}</p>
+                            <h2>{{ card.primaryValue }}</h2>
+                        </div>
+                        <span class="fv-status-badge fv-status-badge-{{ card.severity }}">{{ card.status }}</span>
+                    </header>
+                    <p class="fv-overview-card-summary">{{ card.summary }}</p>
+                    {% if card.meterValue is not null and card.meterMax is not null %}
+                        <progress class="fv-overview-meter" value="{{ card.meterValue }}" max="{{ card.meterMax }}" aria-label="{{ card.meterLabel }}">{{ card.meterLabel }}</progress>
+                    {% elseif card.segments is not empty %}
+                        <div class="fv-overview-bar" role="img" aria-label="{{ card.label }} distribution">
+                            {% for segment in card.segments %}
+                                <span class="fv-overview-bar-segment fv-overview-bar-{{ segment.tone }}" style="width: {{ segment.percent }}%;" title="{{ segment.label }}: {{ segment.value }}"></span>
+                            {% endfor %}
+                        </div>
+                        <ul class="fv-overview-legend">
+                            {% for segment in card.segments %}
+                                <li><span class="fv-overview-legend-swatch fv-overview-bar-{{ segment.tone }}" aria-hidden="true"></span><span>{{ segment.label }}</span><strong>{{ segment.value }}</strong></li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                    {% if card.stats is not empty %}
+                        <dl class="fv-overview-stats">
+                            {% for stat in card.stats %}
+                                <div>
+                                    <dt>{{ stat.label }}</dt>
+                                    <dd><strong class="fv-overview-stat-{{ stat.severity }}">{{ stat.value }}</strong><span>{{ stat.detail }}</span></dd>
+                                </div>
+                            {% endfor %}
+                        </dl>
+                    {% endif %}
+                    {% if card.route %}<a class="fv-overview-card-link" href="{{ path(card.route) }}">{{ card.routeLabel }} <span aria-hidden="true">→</span></a>{% endif %}
+                </article>
+            {% endfor %}
         </section>
-        <section class="fv-panel fv-panel-compact" aria-labelledby="overview-next-heading">
-            <p class="fv-eyebrow">Implementation status</p>
-            <h2 id="overview-next-heading">Feature data will appear here</h2>
-            <p>The navigation and shared interface foundations are in place. Later units will connect forms, submissions, delivery, diagnostics, maintenance, and settings to their authoritative data.</p>
+
+        <section class="fv-panel fv-overview-system-panel" aria-labelledby="overview-system-heading">
+            <header class="fv-section-heading fv-section-heading-inline">
+                <div>
+                    <p class="fv-eyebrow">Local installation</p>
+                    <h2 id="overview-system-heading">System status</h2>
+                    <p>Configuration readiness, worker heartbeats, retention, recovery, and manual backup inventory.</p>
+                </div>
+            </header>
+            {% if overview.systemStatus is not empty %}
+                <div class="fv-overview-status-list">
+                    {% for row in overview.systemStatus %}
+                        <div class="fv-overview-status-row">
+                            <div>
+                                <strong>{{ row.label }}</strong>
+                                <span>{{ row.detail }}</span>
+                            </div>
+                            <span class="fv-status-badge fv-status-badge-{{ row.severity }}">{{ row.status }}</span>
+                            <a class="fv-button fv-button-secondary" href="{{ path(row.route) }}">{{ row.routeLabel }}</a>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="fv-empty-state"><strong>System status unavailable.</strong><p>Open Diagnostics or Maintenance to inspect the local installation.</p></div>
+            {% endif %}
         </section>
     {% elseif destination == 'diagnostics' %}
         {% if schedulerHealth.status != 'healthy' %}

@@ -25,6 +25,9 @@ services:
     Formvex\Spoke\Domain\SubmissionReview\Contract\SubmissionReviewRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoSubmissionReviewRepository
 
+    Formvex\Spoke\Domain\Overview\Contract\OverviewSummaryReader:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoOverviewSummaryReader
+
     Formvex\Spoke\:
         resource: '../src/'
         exclude:

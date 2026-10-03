@@ -208,6 +208,23 @@ final class AdministratorHttpTest extends KernelTestCase
             }
         }
 
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        $auditBefore = (int) $connection->query('SELECT COUNT(*) FROM audit_events')->fetchColumn();
+        $overview = $this->request('GET', '/formvex', [], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+        $auditAfter = (int) $connection->query('SELECT COUNT(*) FROM audit_events')->fetchColumn();
+        self::assertSame(Response::HTTP_OK, $overview->getStatusCode());
+        self::assertStringContainsString('Operational summary', (string) $overview->getContent());
+        self::assertStringContainsString('System status', (string) $overview->getContent());
+        foreach (['Forms', 'Submissions', 'Delivery', 'Storage', 'Scheduler'] as $cardLabel) {
+            self::assertStringContainsString($cardLabel, (string) $overview->getContent());
+        }
+        self::assertStringNotContainsString('Feature data will appear here', (string) $overview->getContent());
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $overview->getContent());
+        self::assertSame($auditBefore, $auditAfter, 'Overview GET must not create audit records.');
+
         $diagnostics = $this->request('GET', '/formvex/diagnostics', [], [
             'formvex_session' => $session,
             'formvex_admin_csrf' => $csrf,

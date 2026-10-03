@@ -9,6 +9,7 @@ use Formvex\Spoke\Admin\AuthenticationRequestResolver;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\Backup\BackupService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
+use Formvex\Spoke\Application\Overview\AdministratorOverviewService;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
@@ -34,6 +35,7 @@ final class PortalShellController extends AbstractController
         private readonly AuthenticationRequestResolver $requestResolver,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
         private readonly InstallationSettingsService $installationSettingsService,
+        private readonly AdministratorOverviewService $overviewService,
         private readonly SpokeStorageResolver $storageResolver,
         private readonly RetentionRepository $retentionRepository,
         private readonly SchedulerHealthRepository $schedulerHealthRepository,
@@ -120,14 +122,28 @@ final class PortalShellController extends AbstractController
         $csrfToken = $this->csrfToken($request, $sessionId);
         $theme = PortalPreferences::theme($request->cookies->get(PortalPreferences::THEME_COOKIE));
         $sidebarState = PortalPreferences::sidebarState($request->cookies->get(PortalPreferences::SIDEBAR_COOKIE));
-        $settingsSnapshot = $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
-        $paths = $this->storageResolver->resolve($this->runtimeConfiguration->applicationRoot);
-        $retentionStatus = $this->retentionRepository->status($paths);
-        $schedulerHealth = $this->schedulerHealthRepository->status($paths, $this->clock->now()->setTimezone(new DateTimeZone('UTC')));
+        $settingsSnapshot = null;
+        $overview = null;
+        $paths = null;
+        $retentionStatus = null;
+        $schedulerHealth = null;
         $backupArchives = [];
         $backupError = null;
         $recoveryHold = null;
-        if ($destination === 'maintenance') {
+        if ($destination === 'overview') {
+            $overview = $this->overviewService->summary($this->runtimeConfiguration->applicationRoot);
+            try {
+                $settingsSnapshot = $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+            } catch (Throwable) {
+                // The Overview service renders an explicit unavailable state for this source.
+            }
+        } else {
+            $settingsSnapshot = $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
+            $paths = $this->storageResolver->resolve($this->runtimeConfiguration->applicationRoot);
+            $retentionStatus = $this->retentionRepository->status($paths);
+            $schedulerHealth = $this->schedulerHealthRepository->status($paths, $this->clock->now()->setTimezone(new DateTimeZone('UTC')));
+        }
+        if ($destination === 'maintenance' && $paths !== null) {
             try {
                 $backupArchives = $this->backupService->list($this->runtimeConfiguration->applicationRoot);
                 $recoveryHold = $this->recoveryHoldStore->current($paths);
@@ -146,16 +162,17 @@ final class PortalShellController extends AbstractController
             'pageDescription' => $definition['description'],
             'theme' => $theme,
             'sidebarState' => $sidebarState,
-            'websiteName' => $settingsSnapshot->settings->websiteDisplayName,
+            'websiteName' => $settingsSnapshot?->settings->websiteDisplayName ?? 'Website',
             'administratorName' => 'admin',
             'navItems' => array_values(PortalNavigation::destinations()),
             'navGroups' => PortalNavigation::groups(),
             'isOverview' => $destination === 'overview',
+            'overview' => $overview,
             'retentionStatus' => $retentionStatus,
-            'retentionSettings' => $settingsSnapshot->settings,
+            'retentionSettings' => $settingsSnapshot?->settings,
             'schedulerHealth' => $schedulerHealth,
-            'deliverySchedulerJob' => $schedulerHealth->job('delivery'),
-            'retentionSchedulerJob' => $schedulerHealth->job('retention'),
+            'deliverySchedulerJob' => $schedulerHealth?->job('delivery'),
+            'retentionSchedulerJob' => $schedulerHealth?->job('retention'),
             'backupPagination' => $backupPagination,
             'backupError' => $backupError,
             'recoveryHold' => $recoveryHold,
