@@ -85,8 +85,15 @@ final class ReleasePackageBuilder
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
         foreach ($iterator as $item) {
             $relative = substr($item->getPathname(), strlen($source) + 1);
+            $normalizedRelative = str_replace(DIRECTORY_SEPARATOR, '/', $relative);
+            if ($source === $this->sourceRoot . DIRECTORY_SEPARATOR . 'docs/release'
+                && ($normalizedRelative === 'security' || str_starts_with($normalizedRelative, 'security/'))) {
+                continue;
+            }
             $target = $destination . DIRECTORY_SEPARATOR . $relative;
-            if ($item->isLink() || str_contains('/' . str_replace(DIRECTORY_SEPARATOR, '/', $relative), '/var/') || str_contains('/' . str_replace(DIRECTORY_SEPARATOR, '/', $relative), '/branding/') && str_starts_with(str_replace(DIRECTORY_SEPARATOR, '/', $relative), 'public/branding/')) {
+            if ($item->isLink()
+                || str_contains('/' . $normalizedRelative, '/var/')
+                || (str_contains('/' . $normalizedRelative, '/branding/') && str_starts_with($normalizedRelative, 'public/branding/'))) {
                 if ($item->isLink()) {
                     throw new RuntimeException('Symlinks are not allowed in the release source.');
                 }

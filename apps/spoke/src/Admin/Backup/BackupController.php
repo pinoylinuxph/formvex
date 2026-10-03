@@ -71,6 +71,9 @@ final class BackupController extends AbstractController
         if ($context === null) {
             return $this->redirectToRoute('spoke_admin_login');
         }
+        if ($context->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
         try {
             if (!$this->administratorService->csrfTokenMatches($context, $request->request->getString('_token'))) {
                 throw new AdministratorFailure('csrf_invalid');
@@ -117,6 +120,9 @@ final class BackupController extends AbstractController
         $context = $this->context($request);
         if ($context === null) {
             return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($context->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
         }
         try {
             if (!$this->administratorService->csrfTokenMatches($context, $request->request->getString('_token'))) {

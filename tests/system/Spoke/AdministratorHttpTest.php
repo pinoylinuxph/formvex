@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Formvex\Tests\System\Spoke;
 
+use Formvex\Spoke\Application\Backup\BackupService;
 use Formvex\Spoke\Console\BootstrapAdministratorCommand;
 use Formvex\Spoke\Console\InstallCommand;
+use Formvex\Spoke\Domain\Backup\BackupKind;
 use Formvex\Spoke\Kernel;
 use PDO;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -126,6 +128,50 @@ final class AdministratorHttpTest extends KernelTestCase
         ]);
         self::assertSame(Response::HTTP_FOUND, $revokedHome->getStatusCode());
         self::assertSame('/formvex/login', $revokedHome->headers->get('Location'));
+    }
+
+    public function testTemporaryPasswordSessionCannotDownloadOrDeleteBackup(): void
+    {
+        $backup = self::getContainer()->get(BackupService::class)->create(
+            $this->temporaryRoot . '/formvex',
+            BackupKind::MANUAL,
+        );
+        $archivePath = $this->temporaryRoot . '/formvex/backups/' . str_replace('/', DIRECTORY_SEPARATOR, $backup->storageKey);
+        self::assertFileExists($archivePath);
+
+        [$session, $csrf] = $this->authenticateWithTemporaryPassword();
+        $cookies = [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ];
+
+        $download = $this->request(
+            'POST',
+            '/formvex/maintenance/backups/' . $backup->publicId . '/download',
+            ['_token' => $csrf],
+            $cookies,
+        );
+        self::assertSame(Response::HTTP_FOUND, $download->getStatusCode());
+        self::assertSame('/formvex/password/change', $download->headers->get('Location'));
+        self::assertFileExists($archivePath);
+
+        $delete = $this->request(
+            'POST',
+            '/formvex/maintenance/backups/' . $backup->publicId . '/delete',
+            [
+                '_token' => $csrf,
+                'confirm_permanent' => '1',
+            ],
+            $cookies,
+        );
+        self::assertSame(Response::HTTP_FOUND, $delete->getStatusCode());
+        self::assertSame('/formvex/password/change', $delete->headers->get('Location'));
+        self::assertFileExists($archivePath);
+
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        $statement = $connection->prepare('SELECT public_id FROM backup_archives WHERE public_id = :public_id');
+        $statement->execute(['public_id' => $backup->publicId]);
+        self::assertSame($backup->publicId, $statement->fetchColumn());
     }
 
     public function testEveryPortalDestinationUsesTheProtectedResponsiveShell(): void
@@ -601,6 +647,30 @@ final class AdministratorHttpTest extends KernelTestCase
         );
 
         return [$this->cookieValue($change, 'formvex_session'), $this->cookieValue($change, 'formvex_admin_csrf')];
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function authenticateWithTemporaryPassword(): array
+    {
+        $loginPage = $this->request('GET', '/formvex/login');
+        $loginCsrf = $this->cookieValue($loginPage, 'formvex_login_csrf');
+        $login = $this->request(
+            'POST',
+            '/formvex/login',
+            [
+                'login_identifier' => 'admin',
+                'password' => $this->temporaryPassword,
+                '_token' => $loginCsrf,
+            ],
+            ['formvex_login_csrf' => $loginCsrf],
+        );
+
+        self::assertSame(Response::HTTP_FOUND, $login->getStatusCode());
+        self::assertSame('/formvex/password/change', $login->headers->get('Location'));
+
+        return [$this->cookieValue($login, 'formvex_session'), $this->cookieValue($login, 'formvex_admin_csrf')];
     }
 
     /**
