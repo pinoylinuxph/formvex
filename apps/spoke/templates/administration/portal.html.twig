@@ -12,10 +12,19 @@
         </nav>
     {% endif %}
 
-    {% include '@platform_ui/components/page_header.html.twig' with {
-        pageTitle: pageTitle,
-        pageDescription: pageDescription,
-    } only %}
+    {% if isOverview %}
+        {% include '@platform_ui/components/page_header.html.twig' with {
+            pageTitle: pageTitle,
+            pageDescription: '',
+            primaryActionLabel: 'Refresh status',
+            primaryActionHref: path('spoke_admin_home'),
+        } only %}
+    {% else %}
+        {% include '@platform_ui/components/page_header.html.twig' with {
+            pageTitle: pageTitle,
+            pageDescription: pageDescription,
+        } only %}
+    {% endif %}
 
     {% include '@platform_ui/components/feedback.html.twig' with {
         message: notice,
@@ -23,17 +32,10 @@
     } only %}
 
     {% if isOverview %}
-        <div class="fv-overview-toolbar">
-            <p class="fv-overview-snapshot" role="status">{{ overview.snapshotLabel }}</p>
-            <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_home') }}">Refresh status</a>
-        </div>
-
         {% if overview.warnings is not empty %}
             <section class="fv-overview-attention" aria-labelledby="overview-attention-heading">
-                <header class="fv-section-heading">
-                    <p class="fv-eyebrow">Action required</p>
+                <header class="fv-overview-attention-header">
                     <h2 id="overview-attention-heading">Needs attention</h2>
-                    <p>These notices remain visible until the underlying status changes.</p>
                 </header>
                 <div class="fv-overview-warning-list">
                     {% for warning in overview.warnings %}

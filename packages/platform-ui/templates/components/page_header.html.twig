@@ -1,7 +1,9 @@
 <div class="fv-page-header">
     <div>
         <h1>{{ pageTitle }}</h1>
-        <p class="fv-page-description">{{ pageDescription }}</p>
+        {% if pageDescription|default('') is not empty %}
+            <p class="fv-page-description">{{ pageDescription }}</p>
+        {% endif %}
     </div>
     {% if primaryActionLabel is defined and primaryActionHref is defined %}
         <a class="fv-button fv-button-primary" href="{{ primaryActionHref }}">{{ primaryActionLabel }}</a>
