@@ -15,7 +15,7 @@ final readonly class SmtpTestResult
 
     public static function passed(): self
     {
-        return new self(SmtpTestStatus::PASSED, 'smtp_test_passed', 'The SMTP server accepted the Formvex test message.');
+        return new self(SmtpTestStatus::PASSED, 'smtp_test_passed', 'The SMTP server accepted the synthetic test message. It does not contain visitor data.');
     }
 
     public static function failed(string $failureCode, string $summary): self

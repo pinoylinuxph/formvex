@@ -52,8 +52,8 @@ final readonly class SymfonySmtpTestTransport implements SmtpTestTransport
             $email = new Email()
                 ->from($sender)
                 ->to($recipient)
-                ->subject('[Formvex SMTP Test] Configuration test')
-                ->text("This is an explicit Formvex SMTP configuration test.\n\nThe SMTP server accepted this test message. It does not contain visitor data.");
+                ->subject('[SMTP Test] Configuration test')
+                ->text("This is an explicit SMTP configuration test.\n\nThe SMTP server accepted this test message. It does not contain visitor data.");
 
             new Mailer($transport)->send($email);
 
@@ -63,7 +63,7 @@ final readonly class SymfonySmtpTestTransport implements SmtpTestTransport
         } catch (Throwable) {
             return SmtpTestResult::failed(
                 'smtp_transport_error',
-                'Formvex could not complete the SMTP test. Check the SMTP host, port, encryption mode, username, password, and timeout, then try again.',
+                'The application could not complete the SMTP test. Check the SMTP host, port, encryption mode, username, password, and timeout, then try again.',
             );
         }
     }
@@ -106,7 +106,7 @@ final readonly class SymfonySmtpTestTransport implements SmtpTestTransport
 
         return SmtpTestResult::failed(
             'smtp_connection_failed',
-            'Formvex could not connect to the SMTP server. Verify the host, port, encryption mode, firewall access, and provider availability.',
+            'The application could not connect to the SMTP server. Verify the host, port, encryption mode, firewall access, and provider availability.',
         );
     }
 }

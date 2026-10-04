@@ -19,6 +19,7 @@ use Formvex\Spoke\Domain\InstallationSettings\SettingsSnapshot;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpEncryption;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpTestState;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpTestStatus;
+use Throwable;
 
 final readonly class InstallationSettingsService
 {
@@ -218,8 +219,17 @@ final readonly class InstallationSettingsService
             $completedAt,
             $completedAt->add(new DateInterval('PT' . self::SMTP_TEST_COOLDOWN_SECONDS . 'S')),
         );
-        $this->settingsStore->saveTestState($paths, $state);
-        $this->settingsStore->recordAudit($paths, 'spoke.settings.smtp_test', $result->status->value, $completedAt);
+        try {
+            $this->settingsStore->saveTestState($paths, $state);
+            $this->settingsStore->recordAudit($paths, 'spoke.settings.smtp_test', $result->status->value, $completedAt);
+        } catch (InstallationSettingsFailure $failure) {
+            throw $failure;
+        } catch (Throwable) {
+            throw new InstallationSettingsFailure(
+                'smtp_test_state_save_failed',
+                'The SMTP test result could not be saved safely. Check the private installation database, then run the test again.',
+            );
+        }
 
         return $state;
     }

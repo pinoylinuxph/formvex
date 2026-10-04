@@ -125,6 +125,47 @@
             {% endif %}
         </section>
     {% elseif destination == 'diagnostics' %}
+        <section class="fv-panel fv-smtp-diagnostics" aria-labelledby="smtp-diagnostics-heading">
+            <header class="fv-section-heading fv-section-heading-inline">
+                <div>
+                    <p class="fv-eyebrow">SMTP delivery</p>
+                    <h2 id="smtp-diagnostics-heading">Email connection diagnostics</h2>
+                    <p>Review the latest saved SMTP test without contacting the provider. Only the explicit test action below sends a message.</p>
+                </div>
+                <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_settings', {tab: 'email'}) }}">Open Email delivery Settings</a>
+            </header>
+
+            <div class="fv-smtp-diagnostics-grid">
+                <div class="fv-smtp-diagnostics-status fv-smtp-diagnostics-status-{{ smtpDiagnostics.severity }}">
+                    <span class="fv-eyebrow">Current status</span>
+                    <strong>{{ smtpDiagnostics.label }}</strong>
+                    <p>{{ smtpDiagnostics.explanation }}</p>
+                </div>
+                <dl class="fv-smtp-diagnostics-meta">
+                    <div><dt>Configuration</dt><dd>{{ smtpDiagnostics.configurationStatus }}</dd></div>
+                    <div><dt>Last completed test</dt><dd>{% if smtpDiagnostics.testedAt %}<time datetime="{{ smtpDiagnostics.testedAt|date('c') }}">{{ smtpDiagnostics.testedAt|date('Y-m-d H:i:s T') }}</time>{% else %}Not recorded{% endif %}</dd></div>
+                    {% if smtpDiagnostics.failureStage %}<div><dt>Diagnostic stage</dt><dd>{{ smtpDiagnostics.failureStage }}</dd></div>{% endif %}
+                </dl>
+            </div>
+
+            <div class="fv-smtp-diagnostics-guidance">
+                <div>
+                    <span class="fv-eyebrow">Next step</span>
+                    <p>{{ smtpDiagnostics.guidance }}</p>
+                </div>
+                <form class="fv-smtp-diagnostics-test" method="post" action="{{ path('spoke_admin_diagnostics_smtp_test') }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}">
+                    <div class="fv-field">
+                        <label for="diagnostics-test-recipient">Test recipient</label>
+                        <input id="diagnostics-test-recipient" name="test_recipient" type="email" value="" autocomplete="email" required aria-describedby="diagnostics-test-recipient-help{% if smtpTestFieldError %} diagnostics-test-recipient-error{% endif %}">
+                        <p id="diagnostics-test-recipient-help" class="fv-field-help">Enter one address where you want to receive the synthetic test. This address is not saved.</p>
+                        {% if smtpTestFieldError %}<p id="diagnostics-test-recipient-error" class="fv-field-error" role="alert">{{ smtpTestFieldError }}</p>{% endif %}
+                    </div>
+                    <button class="fv-button fv-button-primary" type="submit"{% if not smtpDiagnostics.testAllowed %} disabled{% endif %}>Send test email</button>
+                </form>
+            </div>
+        </section>
+
         {% if schedulerHealth.status != 'healthy' %}
             <div class="fv-alert fv-alert-{{ schedulerHealth.severity }}" role="alert">
                 <strong>Scheduler attention required.</strong>

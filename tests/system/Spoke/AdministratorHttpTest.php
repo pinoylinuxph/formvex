@@ -226,15 +226,62 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertStringNotContainsString($this->temporaryRoot, (string) $overview->getContent());
         self::assertSame($auditBefore, $auditAfter, 'Overview GET must not create audit records.');
 
+        $diagnosticsAuditBefore = (int) $connection->query('SELECT COUNT(*) FROM audit_events')->fetchColumn();
         $diagnostics = $this->request('GET', '/formvex/diagnostics', [], [
             'formvex_session' => $session,
             'formvex_admin_csrf' => $csrf,
         ]);
+        self::assertSame(Response::HTTP_OK, $diagnostics->getStatusCode());
+        self::assertStringContainsString('Email connection diagnostics', (string) $diagnostics->getContent());
+        self::assertStringContainsString('Not configured', (string) $diagnostics->getContent());
+        self::assertStringContainsString('Open Email delivery Settings', (string) $diagnostics->getContent());
+        self::assertStringContainsString('Send test email', (string) $diagnostics->getContent());
         self::assertStringContainsString('Scheduler health', (string) $diagnostics->getContent());
         self::assertStringContainsString('Delivery worker', (string) $diagnostics->getContent());
         self::assertStringContainsString('Retention cleanup', (string) $diagnostics->getContent());
         self::assertStringContainsString('Not Confirmed', (string) $diagnostics->getContent());
         self::assertStringNotContainsString($this->temporaryRoot, (string) $diagnostics->getContent());
+        self::assertSame($diagnosticsAuditBefore, (int) $connection->query('SELECT COUNT(*) FROM audit_events')->fetchColumn(), 'Diagnostics GET must not create audit records.');
+
+        $unauthenticatedSmtpTest = $this->request('POST', '/formvex/diagnostics/smtp-test', [
+            '_token' => $csrf,
+            'test_recipient' => 'owner@example.com',
+        ]);
+        self::assertSame(Response::HTTP_FOUND, $unauthenticatedSmtpTest->getStatusCode());
+        self::assertSame('/formvex/login', $unauthenticatedSmtpTest->headers->get('Location'));
+
+        $invalidSmtpTest = $this->request('POST', '/formvex/diagnostics/smtp-test', [
+            '_token' => $csrf,
+            'test_recipient' => 'not-an-email',
+        ], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+        self::assertSame(Response::HTTP_OK, $invalidSmtpTest->getStatusCode());
+        self::assertStringContainsString('Enter one valid email address', (string) $invalidSmtpTest->getContent());
+        self::assertStringNotContainsString('SMTP password', (string) $invalidSmtpTest->getContent());
+
+        $invalidSmtpCsrf = $this->request('POST', '/formvex/diagnostics/smtp-test', [
+            '_token' => 'invalid-token',
+            'test_recipient' => 'owner@example.com',
+        ], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+        self::assertSame(Response::HTTP_OK, $invalidSmtpCsrf->getStatusCode());
+        self::assertStringContainsString('SMTP test could not be verified', (string) $invalidSmtpCsrf->getContent());
+
+        $malformedSmtpRequest = $this->request('POST', '/formvex/diagnostics/smtp-test', [
+            '_token' => $csrf,
+            'test_recipient' => 'owner@example.com',
+            'smtp_password' => 'must-not-be-accepted',
+        ], [
+            'formvex_session' => $session,
+            'formvex_admin_csrf' => $csrf,
+        ]);
+        self::assertSame(Response::HTTP_OK, $malformedSmtpRequest->getStatusCode());
+        self::assertStringContainsString('unsupported or malformed field', (string) $malformedSmtpRequest->getContent());
+        self::assertStringNotContainsString('must-not-be-accepted', (string) $malformedSmtpRequest->getContent());
 
         $darkPreference = $this->request(
             'POST',

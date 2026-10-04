@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Formvex\Tests\Integration\SpokeSqlite;
 
+use DateTimeImmutable;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Installation\PrivateStoragePaths;
+use Formvex\Spoke\Domain\InstallationSettings\Contract\InstallationSettingsStore;
 use Formvex\Spoke\Domain\InstallationSettings\Contract\SmtpTestTransport;
 use Formvex\Spoke\Domain\InstallationSettings\Exception\InstallationSettingsFailure;
 use Formvex\Spoke\Domain\InstallationSettings\InstallationSettings;
+use Formvex\Spoke\Domain\InstallationSettings\SmtpEncryption;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpTestResult;
 use Formvex\Spoke\Infrastructure\Persistence\PdoInstallationSettingsStore;
 use Formvex\Spoke\Infrastructure\Persistence\PdoInstallationStore;
 use Formvex\Spoke\Infrastructure\Persistence\SqliteMigrationRunner;
 use Formvex\Spoke\Infrastructure\Security\LocalSmtpSecretStore;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 final class InstallationSettingsServiceTest extends TestCase
 {
@@ -116,6 +120,77 @@ final class InstallationSettingsServiceTest extends TestCase
             self::assertSame('smtp_test_cooldown', $failure->failureCode);
             self::assertGreaterThan(0, $failure->retryAfterSeconds);
         }
+    }
+
+    public function testSnapshotDoesNotContactTheSmtpTransport(): void
+    {
+        $transport = new RecordingSmtpTestTransport();
+
+        $this->service($transport)->snapshot($this->temporaryRoot);
+
+        self::assertSame([], $transport->recipients);
+    }
+
+    public function testStateWriteFailureReturnsSafeFailureAfterTransportResult(): void
+    {
+        $transport = new RecordingSmtpTestTransport();
+        $settings = InstallationSettings::defaults()->withSmtp(
+            'sender@example.com',
+            'Sender',
+            'smtp.example.com',
+            465,
+            SmtpEncryption::SMTPS,
+            'sender@example.com',
+            10,
+            'a',
+        );
+        $store = new class ($settings) implements InstallationSettingsStore {
+            public function __construct(private readonly InstallationSettings $settings)
+            {
+            }
+
+            public function get(PrivateStoragePaths $paths): InstallationSettings
+            {
+                return $this->settings;
+            }
+
+            public function save(PrivateStoragePaths $paths, InstallationSettings $settings, DateTimeImmutable $now): void
+            {
+            }
+
+            public function getTestState(PrivateStoragePaths $paths): \Formvex\Spoke\Domain\InstallationSettings\SmtpTestState
+            {
+                return \Formvex\Spoke\Domain\InstallationSettings\SmtpTestState::notConfigured();
+            }
+
+            public function saveTestState(PrivateStoragePaths $paths, \Formvex\Spoke\Domain\InstallationSettings\SmtpTestState $state): void
+            {
+                throw new RuntimeException('raw database failure');
+            }
+
+            public function recordAudit(PrivateStoragePaths $paths, string $eventName, string $outcome, DateTimeImmutable $occurredAt): void
+            {
+            }
+        };
+        $secretStore = new LocalSmtpSecretStore();
+        $secretStore->write($this->paths, 'a', 'private-password');
+        $service = new InstallationSettingsService(
+            new FixedStorageResolver($this->paths),
+            $store,
+            $secretStore,
+            $transport,
+            $this->clock,
+        );
+
+        try {
+            $service->sendSmtpTest($this->temporaryRoot, 'owner@example.com');
+            self::fail('A state-write failure must not report SMTP readiness.');
+        } catch (InstallationSettingsFailure $failure) {
+            self::assertSame('smtp_test_state_save_failed', $failure->failureCode);
+            self::assertStringNotContainsString('raw database failure', $failure->getMessage());
+        }
+
+        self::assertSame(['owner@example.com'], $transport->recipients);
     }
 
     public function testInvalidSmtpInputDoesNotWriteTheReplacementSecret(): void
