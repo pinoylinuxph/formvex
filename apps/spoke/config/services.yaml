@@ -113,6 +113,10 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Spoke\Migrations\Version000021CreateDiagnosticReports:
+        autowire: true
+        autoconfigure: true
+
     Formvex\Spoke\Domain\FormChangeObservation\Contract\FormChangeObservationRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoFormChangeObservationRepository
 
@@ -206,6 +210,12 @@ services:
 
     Formvex\Spoke\Domain\Release\Contract\ReleaseMetadataTransport:
         alias: Formvex\Spoke\Infrastructure\Release\CurlReleaseMetadataTransport
+
+    Formvex\Spoke\Domain\Diagnostics\Contract\DiagnosticReportRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoDiagnosticReportRepository
+
+    Formvex\Spoke\Domain\Diagnostics\Contract\DiagnosticReportStore:
+        alias: Formvex\Spoke\Infrastructure\Diagnostics\LocalDiagnosticReportStore
 
     Formvex\Spoke\Infrastructure\Release\CurrentReleaseVersionReader:
         arguments:

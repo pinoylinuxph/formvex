@@ -316,6 +316,62 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertStringContainsString('aria-current="page"', $darkPage->getContent());
     }
 
+    public function testDiagnosticReportIsExplicitRedactedShortLivedAndDownloadable(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $cookies = ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf];
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+
+        $before = $this->request('GET', '/formvex/diagnostics', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $before->getStatusCode());
+        self::assertStringContainsString('Redacted diagnostic report', (string) $before->getContent());
+        self::assertStringContainsString('No report generated.', (string) $before->getContent());
+        self::assertSame(0, (int) $connection->query('SELECT COUNT(*) FROM diagnostic_reports')->fetchColumn());
+
+        $generated = $this->request('POST', '/formvex/diagnostics/reports', ['_token' => $csrf], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $generated->getStatusCode());
+        self::assertStringContainsString('/formvex/diagnostics', (string) $generated->headers->get('Location'));
+        self::assertSame(1, (int) $connection->query('SELECT COUNT(*) FROM diagnostic_reports')->fetchColumn());
+
+        $page = $this->request('GET', '/formvex/diagnostics', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $page->getStatusCode());
+        preg_match('/diagnostics\/reports\/([0-9a-f-]{36})/', (string) $page->getContent(), $matches);
+        $reportId = $matches[1] ?? '';
+        self::assertNotSame('', $reportId);
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $page->getContent());
+        self::assertStringNotContainsString('owner@example.com', (string) $page->getContent());
+        self::assertStringContainsString('Download text', (string) $page->getContent());
+        self::assertStringContainsString('Download JSON', (string) $page->getContent());
+
+        $preview = $this->request('GET', '/formvex/diagnostics/reports/' . $reportId, [], $cookies);
+        self::assertSame(Response::HTTP_OK, $preview->getStatusCode());
+        self::assertStringContainsString('Report contents', (string) $preview->getContent());
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $preview->getContent());
+
+        $text = $this->request('GET', '/formvex/diagnostics/reports/' . $reportId . '/download?format=text', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $text->getStatusCode());
+        self::assertSame('text/plain; charset=UTF-8', $text->headers->get('Content-Type'));
+        self::assertStringContainsString('diagnostic-report-', (string) $text->headers->get('Content-Disposition'));
+        self::assertStringNotContainsString($reportId, (string) $text->headers->get('Content-Disposition'));
+        self::assertStringContainsString('Redacted diagnostic report', (string) $text->getContent());
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $text->getContent());
+
+        $json = $this->request('GET', '/formvex/diagnostics/reports/' . $reportId . '/download?format=json', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $json->getStatusCode());
+        self::assertSame('application/json; charset=UTF-8', $json->headers->get('Content-Type'));
+        self::assertStringContainsString('"schema_version": 1', (string) $json->getContent());
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $json->getContent());
+
+        $second = $this->request('POST', '/formvex/diagnostics/reports', ['_token' => $csrf], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $second->getStatusCode());
+        self::assertSame(1, (int) $connection->query('SELECT COUNT(*) FROM diagnostic_reports')->fetchColumn());
+        self::assertGreaterThanOrEqual(3, (int) $connection->query("SELECT COUNT(*) FROM audit_events WHERE event_name LIKE 'spoke.diagnostic_report.%'")->fetchColumn());
+
+        $unauthenticated = $this->request('POST', '/formvex/diagnostics/reports', ['_token' => $csrf]);
+        self::assertSame(Response::HTTP_FOUND, $unauthenticated->getStatusCode());
+        self::assertSame('/formvex/login', $unauthenticated->headers->get('Location'));
+    }
+
     public function testPortalDestinationsRemainProtectedAndInvalidThemeRequestsAreRejected(): void
     {
         foreach (['/formvex', '/formvex/forms', '/formvex/settings'] as $destination) {

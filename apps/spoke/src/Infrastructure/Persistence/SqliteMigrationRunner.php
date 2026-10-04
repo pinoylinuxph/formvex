@@ -27,6 +27,7 @@ use Formvex\Spoke\Migrations\Version000017CreateDeliveryControl;
 use Formvex\Spoke\Migrations\Version000018CreateFormChangeObservations;
 use Formvex\Spoke\Migrations\Version000019CreateScheduledBackupLifecycle;
 use Formvex\Spoke\Migrations\Version000020CreateReleaseNotifications;
+use Formvex\Spoke\Migrations\Version000021CreateDiagnosticReports;
 use PDO;
 use Throwable;
 
@@ -54,6 +55,7 @@ final readonly class SqliteMigrationRunner
         private ?Version000018CreateFormChangeObservations $formChangeObservationsMigration = null,
         private ?Version000019CreateScheduledBackupLifecycle $scheduledBackupMigration = null,
         private ?Version000020CreateReleaseNotifications $releaseNotificationsMigration = null,
+        private ?Version000021CreateDiagnosticReports $diagnosticReportsMigration = null,
     ) {
     }
 
@@ -110,6 +112,9 @@ final readonly class SqliteMigrationRunner
             }
             if ($this->releaseNotificationsMigration !== null) {
                 $migrations[] = $this->releaseNotificationsMigration;
+            }
+            if ($this->diagnosticReportsMigration !== null) {
+                $migrations[] = $this->diagnosticReportsMigration;
             }
             $knownVersions = array_map(
                 static fn (Migration $migration): string => $migration->version(),

@@ -1483,6 +1483,69 @@ h2 {
   flex: 0 0 auto;
 }
 
+.fv-diagnostic-report-panel {
+  margin-bottom: var(--fv-space-6);
+}
+
+.fv-diagnostic-report-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fv-space-4);
+  padding: var(--fv-space-4);
+  border: 1px solid var(--fv-color-border-subtle);
+  border-radius: var(--fv-radius-md);
+  background: var(--fv-color-bg-surface);
+}
+
+.fv-diagnostic-report-summary > div:first-child {
+  display: grid;
+  gap: var(--fv-space-1);
+  min-width: 0;
+}
+
+.fv-diagnostic-report-summary strong {
+  color: var(--fv-color-content-primary);
+}
+
+.fv-diagnostic-report-summary span:last-child {
+  color: var(--fv-color-content-secondary);
+  font-size: var(--fv-text-sm);
+}
+
+.fv-diagnostic-report-preview {
+  margin-top: var(--fv-space-5);
+  padding-top: var(--fv-space-5);
+  border-top: 1px solid var(--fv-color-border-subtle);
+}
+
+.fv-diagnostic-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--fv-space-4);
+}
+
+.fv-diagnostic-report-section {
+  padding: var(--fv-space-4);
+  border: 1px solid var(--fv-color-border-subtle);
+  border-radius: var(--fv-radius-md);
+  background: var(--fv-color-bg-surface);
+}
+
+.fv-diagnostic-report-section header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--fv-space-3);
+  margin-bottom: var(--fv-space-4);
+}
+
+.fv-diagnostic-report-section h4 {
+  margin: var(--fv-space-1) var(--fv-space-0) var(--fv-space-0);
+  color: var(--fv-color-content-primary);
+  font-size: var(--fv-text-lg);
+}
+
 .fv-empty-state {
   display: grid;
   min-height: 15rem;
@@ -2353,6 +2416,24 @@ body[data-sidebar-state='collapsed'] .fv-nav-link {
 
   .fv-smtp-diagnostics-test .fv-button {
     width: 100%;
+  }
+
+  .fv-diagnostic-report-summary,
+  .fv-diagnostic-report-section header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fv-diagnostic-report-summary .fv-table-actions {
+    flex-wrap: wrap;
+  }
+
+  .fv-diagnostic-report-summary .fv-button {
+    flex: 1 1 auto;
+  }
+
+  .fv-diagnostic-report-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .fv-settings-summary-heading {

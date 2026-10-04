@@ -11,6 +11,7 @@ use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\Backup\BackupService;
 use Formvex\Spoke\Application\Backup\ScheduledBackupService;
 use Formvex\Spoke\Application\Delivery\DeliveryControlService;
+use Formvex\Spoke\Application\Diagnostics\DiagnosticReportService;
 use Formvex\Spoke\Application\FormChangeObservation\FormChangeObservationService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Application\InstallationSettings\SmtpDiagnosticsService;
@@ -18,9 +19,12 @@ use Formvex\Spoke\Application\Overview\AdministratorOverviewService;
 use Formvex\Spoke\Application\Release\ReleaseCheckService;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
+use Formvex\Spoke\Domain\Administration\SessionRecord;
 use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
 use Formvex\Spoke\Domain\Backup\ScheduledBackupFrequency;
 use Formvex\Spoke\Domain\Backup\ScheduledBackupSettings;
+use Formvex\Spoke\Domain\Diagnostics\DiagnosticReport;
+use Formvex\Spoke\Domain\Diagnostics\DiagnosticReportFailure;
 use Formvex\Spoke\Domain\Installation\Contract\Clock;
 use Formvex\Spoke\Domain\InstallationSettings\Exception\InstallationSettingsFailure;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpDiagnosticView;
@@ -61,6 +65,7 @@ final class PortalShellController extends AbstractController
         private readonly DeliveryControlService $deliveryControlService,
         private readonly FormChangeObservationService $formChangeObservationService,
         private readonly ReleaseCheckService $releaseCheckService,
+        private readonly DiagnosticReportService $diagnosticReportService,
     ) {
     }
 
@@ -114,6 +119,90 @@ final class PortalShellController extends AbstractController
             return $this->renderDestination($request, 'diagnostics', $this->administratorMessage($failure), 'danger');
         } catch (InstallationSettingsFailure $failure) {
             return $this->renderDestination($request, 'diagnostics', $failure->getMessage(), 'danger', $failure->fieldErrors['test_recipient'] ?? null);
+        }
+    }
+
+    #[Route('/formvex/diagnostics/reports', name: 'spoke_admin_diagnostic_report_generate', methods: ['POST'])]
+    public function generateDiagnosticReport(Request $request): Response
+    {
+        $session = $this->authenticatedSession($request);
+        if ($session === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($session->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        try {
+            $payload = $this->settingsRequestResolver->payload($request, ['_token']);
+            if (!$this->administratorService->csrfTokenMatches($session, $payload['_token'] ?? '')) {
+                throw new AdministratorFailure('csrf_invalid');
+            }
+            $generation = $this->diagnosticReportService->generate($this->runtimeConfiguration->applicationRoot, 'admin');
+
+            return $this->redirectToRoute('spoke_admin_diagnostics', [
+                'notice' => $generation->created
+                    ? 'A redacted diagnostic report was generated. It is available for 15 minutes.'
+                    : 'A recent redacted diagnostic report is already available. No new report was generated during the cooldown period.',
+            ]);
+        } catch (AdministratorFailure $failure) {
+            return $this->redirectToRoute('spoke_admin_diagnostics', ['error' => $this->diagnosticReportMessage($failure->failureCode)]);
+        } catch (DiagnosticReportFailure $failure) {
+            return $this->redirectToRoute('spoke_admin_diagnostics', ['error' => $failure->getMessage()]);
+        } catch (Throwable) {
+            return $this->redirectToRoute('spoke_admin_diagnostics', ['error' => 'The redacted diagnostic report could not be generated safely. No existing report was changed.']);
+        }
+    }
+
+    #[Route('/formvex/diagnostics/reports/{reportId}', name: 'spoke_admin_diagnostic_report_preview', methods: ['GET'])]
+    public function previewDiagnosticReport(Request $request, string $reportId): Response
+    {
+        $session = $this->authenticatedSession($request);
+        if ($session === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($session->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        try {
+            $report = $this->diagnosticReportService->read($this->runtimeConfiguration->applicationRoot, $reportId, 'admin', 'previewed');
+
+            return $this->renderDestination($request, 'diagnostics', null, 'information', null, $report);
+        } catch (DiagnosticReportFailure) {
+            return $this->redirectToRoute('spoke_admin_diagnostics', ['error' => 'The diagnostic report is no longer available. Generate a new report from Diagnostics.']);
+        }
+    }
+
+    #[Route('/formvex/diagnostics/reports/{reportId}/download', name: 'spoke_admin_diagnostic_report_download', methods: ['GET'])]
+    public function downloadDiagnosticReport(Request $request, string $reportId): Response
+    {
+        $session = $this->authenticatedSession($request);
+        if ($session === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($session->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        $format = $request->query->getString('format');
+        if (!in_array($format, ['text', 'json'], true)) {
+            return new Response('The report format is not available.', Response::HTTP_BAD_REQUEST, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        }
+        try {
+            $report = $this->diagnosticReportService->read($this->runtimeConfiguration->applicationRoot, $reportId, 'admin', 'downloaded');
+            $extension = $format === 'json' ? 'json' : 'txt';
+            $content = $format === 'json' ? $report->toJson() : $this->diagnosticReportService->plainText($report);
+            $date = $report->generatedAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
+
+            return new Response($content, Response::HTTP_OK, [
+                'Content-Type' => $format === 'json' ? 'application/json; charset=UTF-8' : 'text/plain; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="diagnostic-report-' . $date . '.' . $extension . '"',
+                'Cache-Control' => 'no-store, private',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        } catch (DiagnosticReportFailure) {
+            return new Response('The diagnostic report is not available.', Response::HTTP_NOT_FOUND, ['Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'no-store, private']);
         }
     }
 
@@ -295,6 +384,7 @@ final class PortalShellController extends AbstractController
         ?string $actionMessage = null,
         string $actionVariant = 'information',
         ?string $smtpTestFieldError = null,
+        ?DiagnosticReport $diagnosticReport = null,
     ): Response {
         $sessionId = $this->sessionId($request);
         $session = $sessionId === null ? null : $this->administratorService->session(
@@ -333,6 +423,8 @@ final class PortalShellController extends AbstractController
         $releaseCheckState = null;
         $releaseCheckStatus = null;
         $releaseCheckNoticeVisible = false;
+        $diagnosticReportMetadata = null;
+        $diagnosticReportError = null;
         if ($destination === 'overview' || $destination === 'maintenance') {
             try {
                 $releaseCheckSettings = $this->releaseCheckService->settings($this->runtimeConfiguration->applicationRoot);
@@ -379,6 +471,11 @@ final class PortalShellController extends AbstractController
                 $schedulerHealth = $this->schedulerHealthRepository->status($paths, $this->clock->now()->setTimezone(new DateTimeZone('UTC')));
             } catch (Throwable) {
                 $schedulerHealth = new SchedulerHealth([], 'unavailable', 'danger', 'The scheduler health state could not be read safely. Check the private installation storage, then refresh Diagnostics.');
+            }
+            try {
+                $diagnosticReportMetadata = $this->diagnosticReportService->latest($this->runtimeConfiguration->applicationRoot);
+            } catch (Throwable) {
+                $diagnosticReportError = 'Diagnostic report storage is unavailable. No report was generated.';
             }
         } else {
             $settingsSnapshot = $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
@@ -439,6 +536,9 @@ final class PortalShellController extends AbstractController
             'releaseCheckState' => $releaseCheckState,
             'releaseCheckStatus' => $releaseCheckStatus,
             'releaseCheckNoticeVisible' => $releaseCheckNoticeVisible,
+            'diagnosticReport' => $diagnosticReport,
+            'diagnosticReportMetadata' => $diagnosticReportMetadata,
+            'diagnosticReportError' => $diagnosticReportError,
             'notice' => $actionMessage ?? ($notice !== '' ? $notice : ($error !== '' ? $error : null)),
             'noticeVariant' => $actionMessage !== null ? $actionVariant : ($error !== '' ? 'danger' : 'information'),
         ]);
@@ -489,6 +589,25 @@ final class PortalShellController extends AbstractController
             'csrf_invalid' => 'The SMTP test could not be verified. Reload Diagnostics and submit the test again.',
             'request_malformed' => 'The SMTP test request contained an unsupported or malformed field. Reload Diagnostics and submit the visible fields again.',
             default => 'The SMTP test request could not be verified. Reload Diagnostics and try again.',
+        };
+    }
+
+    private function authenticatedSession(Request $request): ?SessionRecord
+    {
+        $sessionId = $this->sessionId($request);
+
+        return $sessionId === null ? null : $this->administratorService->session(
+            $this->runtimeConfiguration->applicationRoot,
+            $sessionId,
+        );
+    }
+
+    private function diagnosticReportMessage(string $failureCode): string
+    {
+        return match ($failureCode) {
+            'csrf_invalid' => 'The diagnostic report request could not be verified. Refresh Diagnostics and try again.',
+            'request_malformed' => 'The diagnostic report request was malformed. Refresh Diagnostics and try again.',
+            default => 'The diagnostic report could not be generated safely. No existing report was changed.',
         };
     }
 }

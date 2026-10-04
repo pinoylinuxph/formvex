@@ -188,6 +188,58 @@
             </div>
         </section>
 
+        <section class="fv-panel fv-diagnostic-report-panel" aria-labelledby="diagnostic-report-heading">
+            <header class="fv-section-heading fv-section-heading-inline">
+                <div>
+                    <p class="fv-eyebrow">Safe support snapshot</p>
+                    <h2 id="diagnostic-report-heading">Redacted diagnostic report</h2>
+                    <p>Generate a short-lived report containing operational status only. Visitor values, secrets, private paths, addresses, and raw logs are excluded.</p>
+                </div>
+                <form method="post" action="{{ path('spoke_admin_diagnostic_report_generate') }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}">
+                    <button class="fv-button fv-button-primary" type="submit">Generate report</button>
+                </form>
+            </header>
+            {% if diagnosticReportError %}
+                <div class="fv-alert fv-alert-warning" role="status"><strong>Report unavailable.</strong><span>{{ diagnosticReportError }}</span></div>
+            {% elseif diagnosticReportMetadata %}
+                <div class="fv-diagnostic-report-summary">
+                    <div>
+                        <span class="fv-eyebrow">Latest report</span>
+                        <strong>Available until {{ diagnosticReportMetadata.expiresAt|date('Y-m-d H:i:s T') }}</strong>
+                        <span>Generated {{ diagnosticReportMetadata.generatedAt|date('Y-m-d H:i:s T') }} · {{ diagnosticReportMetadata.sizeBytes|number_format(0, '.', ',') }} bytes · reference …{{ diagnosticReportMetadata.publicId|slice(-8) }}</span>
+                    </div>
+                    <div class="fv-table-actions">
+                        <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_diagnostic_report_preview', {reportId: diagnosticReportMetadata.publicId}) }}">Preview</a>
+                        <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_diagnostic_report_download', {reportId: diagnosticReportMetadata.publicId, format: 'text'}) }}">Download text</a>
+                        <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_diagnostic_report_download', {reportId: diagnosticReportMetadata.publicId, format: 'json'}) }}">Download JSON</a>
+                    </div>
+                </div>
+            {% else %}
+                <div class="fv-empty-state"><strong>No report generated.</strong><p>Generate one when you need to share a safe operational snapshot with a support reviewer.</p></div>
+            {% endif %}
+
+            {% if diagnosticReport %}
+                <div class="fv-diagnostic-report-preview" aria-labelledby="diagnostic-report-preview-heading">
+                    <div class="fv-section-heading">
+                        <p class="fv-eyebrow">Preview</p>
+                        <h3 id="diagnostic-report-preview-heading">Report contents</h3>
+                        <p>Generated {{ diagnosticReport.generatedAt|date('Y-m-d H:i:s T') }} and expires {{ diagnosticReport.expiresAt|date('Y-m-d H:i:s T') }}.</p>
+                    </div>
+                    <div class="fv-diagnostic-report-grid">
+                        {% for section in diagnosticReport.sections %}
+                            <article class="fv-diagnostic-report-section">
+                                <header><div><p class="fv-eyebrow">Status section</p><h4>{{ section.label }}</h4></div><span class="fv-status-badge fv-status-badge-{{ section.status == 'Available' or section.status == 'None' ? 'success' : 'warning' }}">{{ section.status }}</span></header>
+                                <dl class="fv-detail-list">
+                                    {% for entry in section.entries %}<div><dt>{{ entry.label }}</dt><dd>{{ entry.value }}</dd></div>{% endfor %}
+                                </dl>
+                            </article>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        </section>
+
         {% if schedulerHealth.status != 'healthy' %}
             <div class="fv-alert fv-alert-{{ schedulerHealth.severity }}" role="alert">
                 <strong>Scheduler attention required.</strong>
