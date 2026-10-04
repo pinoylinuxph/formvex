@@ -62,7 +62,12 @@ final readonly class ZipBackupArchiveStore implements BackupArchiveStore
             ];
             $this->writeZip($paths, $candidate, $snapshot, $entries, $manifest);
             $manifestSchema = $this->verify($paths, $candidate);
-            $targetKey = ($kind === BackupKind::PRE_UPGRADE ? 'pre_upgrade/' : 'manual/') . $publicId . '.zip';
+            $targetPrefix = match ($kind) {
+                BackupKind::PRE_UPGRADE => 'pre_upgrade/',
+                BackupKind::SCHEDULED => 'scheduled/',
+                BackupKind::MANUAL => 'manual/',
+            };
+            $targetKey = $targetPrefix . $publicId . '.zip';
             $target = $this->archivePath($paths, $targetKey);
             $this->ensureDirectory(dirname($target));
             if (!rename($candidate, $target)) {
@@ -143,13 +148,17 @@ final readonly class ZipBackupArchiveStore implements BackupArchiveStore
 
     public function archivePath(PrivateStoragePaths $paths, string $storageKey): string
     {
-        if (!preg_match('/\A(?:manual|pre_upgrade)\/[0-9a-f-]{16,80}\.zip\z/', $storageKey)) {
+        if (!preg_match('/\A(?:manual|pre_upgrade|scheduled)\/[0-9a-f-]{16,80}\.zip\z/', $storageKey)) {
             throw new BackupFailure('archive_key_invalid', 'The backup storage key is invalid.');
         }
-        $base = str_starts_with($storageKey, 'manual/') ? $paths->manualBackups : $paths->preUpgradeBackups;
+        $base = match (true) {
+            str_starts_with($storageKey, 'manual/') => $paths->manualBackups,
+            str_starts_with($storageKey, 'scheduled/') => $paths->scheduledBackups,
+            default => $paths->preUpgradeBackups,
+        };
 
         if ($base === '') {
-            throw new BackupFailure('backup_storage_unavailable', 'The pre-upgrade backup directory is not configured.');
+            throw new BackupFailure('backup_storage_unavailable', 'The selected private backup directory is not configured.');
         }
 
         return $base . DIRECTORY_SEPARATOR . substr($storageKey, strpos($storageKey, '/') + 1);
@@ -169,7 +178,7 @@ final readonly class ZipBackupArchiveStore implements BackupArchiveStore
     public function restore(PrivateStoragePaths $paths, string $archivePath): void
     {
         $schemaVersion = $this->verify($paths, $archivePath);
-        if (!preg_match('/\A\d{6}\z/', $schemaVersion) || (int) $schemaVersion > 16) {
+        if (!preg_match('/\A\d{6}\z/', $schemaVersion) || (int) $schemaVersion > 19) {
             throw new BackupFailure('schema_incompatible', 'The archive schema is newer than this installation can restore.');
         }
         $staging = $paths->temporaryBackups . DIRECTORY_SEPARATOR . 'restore-' . bin2hex(random_bytes(10));
@@ -443,7 +452,7 @@ final readonly class ZipBackupArchiveStore implements BackupArchiveStore
 
     private function isPrivateArchive(PrivateStoragePaths $paths, string $path): bool
     {
-        foreach ([$paths->manualBackups, $paths->preUpgradeBackups, $paths->temporaryBackups] as $directory) {
+        foreach ([$paths->manualBackups, $paths->preUpgradeBackups, $paths->scheduledBackups, $paths->temporaryBackups] as $directory) {
             $boundary = rtrim((string) realpath($directory), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
             if ($boundary !== DIRECTORY_SEPARATOR && str_starts_with($path, $boundary)) {
                 return true;

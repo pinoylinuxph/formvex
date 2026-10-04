@@ -9,12 +9,14 @@ use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\FormActivation\FormActivationStatusService;
+use Formvex\Spoke\Application\FormChangeObservation\FormChangeObservationService;
 use Formvex\Spoke\Application\FormConfiguration\FormConfigurationService;
 use Formvex\Spoke\Application\FormDiscovery\FormDiscoveryService;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Administration\SessionRecord;
 use Formvex\Spoke\Domain\FormActivation\Exception\FormActivationFailure;
 use Formvex\Spoke\Domain\FormActivation\FormActivationStatus;
+use Formvex\Spoke\Domain\FormChangeObservation\FormChangeObservationFailure;
 use Formvex\Spoke\Domain\FormConfiguration\Exception\FormConfigurationFailure;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationDetails;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationRecord;
@@ -42,6 +44,7 @@ final class FormConfigurationController extends AbstractController
         private readonly FormConfigurationService $formConfigurationService,
         private readonly FormDiscoveryService $formDiscoveryService,
         private readonly FormActivationStatusService $formActivationStatusService,
+        private readonly FormChangeObservationService $formChangeObservationService,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
     ) {
     }
@@ -61,13 +64,21 @@ final class FormConfigurationController extends AbstractController
             $activeForms = $this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot);
             $allForms = $this->formConfigurationService->list($this->runtimeConfiguration->applicationRoot, true);
             $pagination = PaginationView::fromRequest($request, $activeForms);
+            $changeWarnings = [];
+
+            try {
+                $changeWarnings = $this->formChangeObservationService->listOpen($this->runtimeConfiguration->applicationRoot);
+            } catch (FormChangeObservationFailure) {
+                // The Forms inventory remains available while an optional warning source is migrated or repaired.
+            }
 
             return $this->renderPage($request, 'administration/forms/index.html.twig', [
                 'forms' => $pagination['items'],
                 'pagination' => $pagination,
                 'trashCount' => count($allForms) - count($activeForms),
-                'message' => null,
-                'messageVariant' => 'information',
+                'changeWarnings' => $changeWarnings,
+                'message' => $request->query->getString('notice') ?: ($request->query->getString('error') ?: null),
+                'messageVariant' => $request->query->getString('error') !== '' ? 'danger' : 'information',
             ]);
         } catch (FormConfigurationFailure $failure) {
             return $this->renderPage($request, 'administration/forms/index.html.twig', [
@@ -313,6 +324,53 @@ final class FormConfigurationController extends AbstractController
     public function hardDelete(Request $request, string $publicFormId): Response
     {
         return $this->lifecycleAction($request, $publicFormId, 'hard_delete');
+    }
+
+    #[Route('/formvex/forms/change-observations/{observationId}/resolve', name: 'spoke_admin_form_change_observation_resolve', methods: ['POST'])]
+    public function resolveChangeObservation(Request $request, string $observationId): Response
+    {
+        return $this->changeObservationAction($request, $observationId, 'resolve');
+    }
+
+    #[Route('/formvex/forms/change-observations/{observationId}/discard', name: 'spoke_admin_form_change_observation_discard', methods: ['POST'])]
+    public function discardChangeObservation(Request $request, string $observationId): Response
+    {
+        return $this->changeObservationAction($request, $observationId, 'discard');
+    }
+
+    private function changeObservationAction(Request $request, string $observationId, string $action): Response
+    {
+        if (($context = $this->authenticatedContext($request)) === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+
+        if ($context->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        try {
+            $token = $request->request->get('_token');
+            if (!is_string($token) || $token === '') {
+                throw new AdministratorFailure('request_malformed');
+            }
+            $this->assertCsrf($context, $token);
+
+            if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $observationId) !== 1) {
+                throw new FormChangeObservationFailure('request_invalid', 'The form change warning identifier is invalid.');
+            }
+
+            if ($action === 'resolve') {
+                $this->formChangeObservationService->resolve($this->runtimeConfiguration->applicationRoot, $observationId);
+                $message = 'The form change warning was marked as reviewed. It will remain available in the audit history.';
+            } else {
+                $this->formChangeObservationService->discard($this->runtimeConfiguration->applicationRoot, $observationId);
+                $message = 'The form change warning was discarded. A later occurrence will create a new warning.';
+            }
+
+            return $this->redirectToRoute('spoke_admin_forms', ['notice' => $message]);
+        } catch (AdministratorFailure|FormChangeObservationFailure $failure) {
+            return $this->redirectToRoute('spoke_admin_forms', ['error' => $failure->getMessage()]);
+        }
     }
 
     private function lifecycleAction(Request $request, string $publicFormId, string $action): Response

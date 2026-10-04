@@ -10,6 +10,8 @@ test('the local shell applies themes and preserves sidebar interaction state', a
 
   await page.getByRole('button', { name: 'Collapse navigation' }).click();
   await expect(page.locator('body')).toHaveAttribute('data-sidebar-state', 'collapsed');
+  await expect(page.getByRole('button', { name: 'Expand navigation' })).toBeVisible();
+  await expect(page.locator('[data-sidebar-collapse-icon]')).toHaveText('›');
 
   await page.setViewportSize({ width: 600, height: 800 });
   await page.getByRole('button', { name: 'Open navigation' }).click();

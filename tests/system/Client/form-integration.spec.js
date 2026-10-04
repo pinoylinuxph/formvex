@@ -7,6 +7,9 @@ const resolution = {
   form_marker: 'contact-form',
 };
 
+const integrationStructureFingerprint =
+  '92265f9ba735ba6f7e2de1a011f456385220e5e4acf2f1d5fec6bdaec5e9631e';
+
 async function installClient(page, submissionHandler) {
   await page.route('**/formvex/api/v1/forms/resolve*', async (route) => {
     const url = new URL(route.request().url());
@@ -294,6 +297,80 @@ test('blocks an existing submit handler while the integration is still loading',
   await page.locator('#contact-form button').click();
   await expect(page.locator('#contact-form [data-formvex-feedback]')).toHaveText('Received.');
   expect(submissionCount).toBe(1);
+});
+
+test('reports changed structure metadata without visitor values and skips unchanged structure', async ({
+  page,
+}) => {
+  const observations = [];
+  await page.goto('/integration');
+  await page.locator('#contact-form').evaluate((form) => {
+    const control = document.createElement('input');
+    control.name = 'phone';
+    control.type = 'tel';
+    form.append(control);
+  });
+  await page.route('**/formvex/api/v1/forms/resolve*', async (route) => {
+    const url = new URL(route.request().url());
+
+    if (url.searchParams.get('form_marker') !== 'contact-form') {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...resolution, source_fingerprint: integrationStructureFingerprint }),
+    });
+  });
+  await page.route('**/formvex/api/v1/forms/public-contact/change-observations', async (route) => {
+    observations.push(JSON.parse(route.request().postData() ?? '{}'));
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.addScriptTag({ type: 'module', url: '/build/client.js' });
+
+  await expect.poll(() => observations.length).toBe(1);
+  expect(observations[0]).toMatchObject({
+    schema_version: 1,
+    configuration_version: 3,
+    page_path: '/integration',
+    form_marker: 'contact-form',
+  });
+  expect(observations[0].source_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  expect(observations[0].controls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ control_name: 'phone', control_type: 'tel' }),
+    ]),
+  );
+  expect(observations[0]).not.toHaveProperty('fields');
+  expect(observations[0]).not.toHaveProperty('visitor_value');
+
+  await page.unroute('**/formvex/api/v1/forms/resolve*');
+  await page.unroute('**/formvex/api/v1/forms/public-contact/change-observations');
+  const unchangedObservations = [];
+  await page.goto('/integration');
+  await page.route('**/formvex/api/v1/forms/resolve*', async (route) => {
+    const url = new URL(route.request().url());
+
+    if (url.searchParams.get('form_marker') !== 'contact-form') {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...resolution, source_fingerprint: integrationStructureFingerprint }),
+    });
+  });
+  await page.route('**/formvex/api/v1/forms/public-contact/change-observations', async (route) => {
+    unchangedObservations.push(route.request());
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.addScriptTag({ type: 'module', url: '/build/client.js' });
+  await page.waitForTimeout(250);
+  expect(unchangedObservations).toHaveLength(0);
 });
 
 test('blocks a legacy handler during qualification redemption', async ({ page }) => {

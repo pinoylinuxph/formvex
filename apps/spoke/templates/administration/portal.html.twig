@@ -38,6 +38,19 @@
                 <span>Valid visitor submissions can still be accepted while storage is available. <a href="{{ path('spoke_admin_delivery') }}">Review Delivery</a> to resume contact-message delivery.</span>
             </div>
         {% endif %}
+        {% if formChangeWarningCount|default(0) > 0 %}
+            <div class="fv-alert fv-alert-warning" role="alert">
+                <strong>{{ formChangeWarningCount }} form change{{ formChangeWarningCount == 1 ? '' : 's' }} detected.</strong>
+                <a href="{{ path('spoke_admin_forms') }}">Review Forms</a>
+            </div>
+        {% endif %}
+        {% if scheduledBackupSchedulerJob and scheduledBackupSchedulerJob.status in ['failed', 'stale', 'not_confirmed'] %}
+            <div class="fv-alert fv-alert-{{ scheduledBackupSchedulerJob.severity }}" role="alert">
+                <strong>Scheduled backups need attention.</strong>
+                <span>{{ scheduledBackupSchedulerJob.message }}</span>
+                <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_maintenance') }}">Review Maintenance</a>
+            </div>
+        {% endif %}
         {% if overview.warnings is not empty %}
             <section class="fv-overview-attention" aria-labelledby="overview-attention-heading">
                 <header class="fv-overview-attention-header">
@@ -277,11 +290,96 @@
                     <span>Retention scheduler</span>
                     <strong class="fv-maintenance-status-{{ retentionSchedulerJob.severity }}">{{ retentionSchedulerJob.status|replace({'_': ' '})|title }}</strong>
                 </div>
+                <div class="fv-maintenance-status-item">
+                    <span>Scheduled backups</span>
+                    <strong class="fv-maintenance-status-{{ scheduledBackupSchedulerJob.severity }}">{{ scheduledBackupSchedulerJob.status|replace({'_': ' '})|title }}</strong>
+                </div>
             </div>
         </section>
 
         {% if recoveryHold %}
             <div class="fv-alert fv-alert-danger" role="alert"><strong>Recovery hold is active.</strong><span>The installation is unavailable while the hosting administrator completes or repairs a server-side restore. Backup actions are paused.</span></div>
+        {% endif %}
+
+        <section class="fv-maintenance-section" aria-labelledby="scheduled-backup-heading">
+            <header class="fv-section-heading fv-section-heading-inline">
+                <div>
+                    <p class="fv-eyebrow">Automatic recovery</p>
+                    <h2 id="scheduled-backup-heading">Scheduled backups</h2>
+                    <p>Keep verified private copies on a UTC schedule. The hosting scheduler must invoke the task; enabling this setting does not create an operating-system cron entry.</p>
+                </div>
+                {% if scheduledBackupSettings %}<span class="fv-status-badge fv-status-badge-{{ scheduledBackupSettings.enabled ? 'success' : 'neutral' }}">{{ scheduledBackupSettings.enabled ? 'Enabled' : 'Disabled' }}</span>{% endif %}
+            </header>
+            {% if scheduledBackupError %}
+                <div class="fv-alert fv-alert-warning" role="status"><strong>Scheduled backup inventory unavailable.</strong><span>{{ scheduledBackupError }}</span></div>
+            {% elseif scheduledBackupSettings %}
+                <form class="fv-form" method="post" action="{{ path('spoke_admin_scheduled_backup_settings') }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}">
+                    <div class="fv-settings-grid">
+                        <div class="fv-field">
+                            <label for="scheduled-backup-frequency">Frequency</label>
+                            <select class="fv-input" id="scheduled-backup-frequency" name="frequency">
+                                <option value="daily"{% if scheduledBackupSettings.frequency.value == 'daily' %} selected{% endif %}>Daily</option>
+                                <option value="weekly"{% if scheduledBackupSettings.frequency.value == 'weekly' %} selected{% endif %}>Weekly</option>
+                                <option value="monthly"{% if scheduledBackupSettings.frequency.value == 'monthly' %} selected{% endif %}>Monthly on day 1</option>
+                            </select>
+                            <p class="fv-field-help">All schedule times use UTC. Monthly backups run on day 1.</p>
+                        </div>
+                        <div class="fv-field">
+                            <label for="scheduled-backup-weekday">Weekly day</label>
+                            <select class="fv-input" id="scheduled-backup-weekday" name="weekday">
+                                {% for value, label in {0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday'} %}<option value="{{ value }}"{% if scheduledBackupSettings.weekday == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                            </select>
+                            <p class="fv-field-help">Used when Weekly is selected.</p>
+                        </div>
+                        <div class="fv-field">
+                            <label for="scheduled-backup-hour">UTC hour</label>
+                            <input class="fv-input" id="scheduled-backup-hour" name="hour" type="number" min="0" max="23" value="{{ scheduledBackupSettings.hour }}" required>
+                        </div>
+                        <div class="fv-field">
+                            <label for="scheduled-backup-minute">UTC minute</label>
+                            <input class="fv-input" id="scheduled-backup-minute" name="minute" type="number" min="0" max="59" value="{{ scheduledBackupSettings.minute }}" required>
+                        </div>
+                        <div class="fv-field">
+                            <label for="scheduled-backup-retention">Successful copies to retain</label>
+                            <input class="fv-input" id="scheduled-backup-retention" name="retention_count" type="number" min="1" max="12" value="{{ scheduledBackupSettings.retentionCount }}" required>
+                            <p class="fv-field-help">Choose from 1 to 12. Default: 4. A pinned download may temporarily exceed this count.</p>
+                        </div>
+                    </div>
+                    <label class="fv-checkbox" for="scheduled-backup-enabled"><input id="scheduled-backup-enabled" name="enabled" type="checkbox" value="1"{% if scheduledBackupSettings.enabled %} checked{% endif %}> Enable scheduled backups</label>
+                    <div class="fv-form-actions"><button class="fv-button fv-button-primary" type="submit">Save scheduled backup settings</button></div>
+                </form>
+            {% endif %}
+        </section>
+
+        {% if scheduledBackupSettings and not scheduledBackupError %}
+            <section class="fv-maintenance-section fv-maintenance-inventory" aria-labelledby="scheduled-backup-inventory-heading">
+                <header class="fv-maintenance-section-header">
+                    <div><p class="fv-eyebrow">Verified automatic copies</p><h2 id="scheduled-backup-inventory-heading">Scheduled backup inventory</h2></div>
+                    <span class="fv-maintenance-count">{{ scheduledBackupPagination.total }} {{ scheduledBackupPagination.total == 1 ? 'archive' : 'archives' }}</span>
+                </header>
+                {% if scheduledBackupPagination.total == 0 %}
+                    {% include '@platform_ui/components/empty_state.html.twig' with { eyebrow: 'No scheduled backups', headingId: 'scheduled-backup-empty-heading', title: 'No verified scheduled copy yet', message: scheduledBackupSettings.enabled ? 'The next due scheduler run will create the first verified copy.' : 'Enable scheduled backups when the hosting scheduler is ready.' } only %}
+                {% else %}
+                    <div class="fv-table-container" tabindex="0" aria-label="Scheduled backup inventory table">
+                        <table class="fv-table"><caption class="fv-visually-hidden">Scheduled backup inventory</caption><thead><tr><th scope="col">Created</th><th scope="col">Due period</th><th scope="col">Schema</th><th scope="col">Size</th><th scope="col">Integrity</th><th scope="col">Actions</th></tr></thead><tbody>
+                        {% for backup in scheduledBackupPagination.items %}<tr><th scope="row"><time datetime="{{ backup.createdAt|date('c') }}">{{ backup.createdAt|date('Y-m-d H:i:s T') }}</time></th><td>{{ backup.duePeriod }}</td><td>{{ backup.schemaVersion }}</td><td>{{ backup.sizeBytes|number_format(0, '.', ',') }} bytes</td><td><span class="fv-status-badge fv-status-badge-{{ backup.state.value == 'verified' ? 'success' : 'warning' }}">{{ backup.state.value|replace({'_': ' '})|title }}</span></td><td>{% if backup.state.value == 'verified' %}<form method="post" action="{{ path('spoke_admin_scheduled_backup_download', {backupId: backup.publicId}) }}"><input type="hidden" name="_token" value="{{ csrfToken }}"><button class="fv-button fv-button-secondary" type="submit">Download</button></form>{% else %}<span class="fv-table-cell-note">No action available</span>{% endif %}</td></tr>{% endfor %}
+                        </tbody></table>
+                    </div>
+                    {% include '@platform_ui/components/pagination.html.twig' with {
+                        pages: scheduledBackupPagination.pages,
+                        total: scheduledBackupPagination.total,
+                        firstItem: scheduledBackupPagination.firstItem,
+                        lastItem: scheduledBackupPagination.lastItem,
+                        currentPage: scheduledBackupPagination.page,
+                        pageCount: scheduledBackupPagination.pageCount,
+                        pageParameter: scheduledBackupPagination.pageParameter,
+                        previous: scheduledBackupPagination.previous,
+                        next: scheduledBackupPagination.next,
+                        pageSizeControl: {action: path('spoke_admin_maintenance'), id: 'scheduled-backup-page-size', name: 'scheduled_backup_page_size', value: scheduledBackupPagination.pageSize, options: [12, 25, 50], hidden: []}
+                    } only %}
+                {% endif %}
+            </section>
         {% endif %}
 
         <section class="fv-maintenance-section" aria-labelledby="backup-actions-heading">

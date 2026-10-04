@@ -13,6 +13,7 @@ final readonly class PublicFormResolution
         public bool $captchaEnabled = false,
         public string $captchaProvider = 'turnstile',
         public string $captchaSiteKey = '',
+        public string $sourceFingerprint = '',
     ) {
     }
 }

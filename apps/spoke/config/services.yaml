@@ -101,6 +101,17 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Spoke\Migrations\Version000018CreateFormChangeObservations:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Migrations\Version000019CreateScheduledBackupLifecycle:
+        autowire: true
+        autoconfigure: true
+
+    Formvex\Spoke\Domain\FormChangeObservation\Contract\FormChangeObservationRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoFormChangeObservationRepository
+
     Formvex\Spoke\Domain\Branding\Contract\BrandingSettingsStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoBrandingSettingsStore
 
@@ -161,6 +172,9 @@ services:
 
     Formvex\Spoke\Domain\Backup\Contract\BackupRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoBackupRepository
+
+    Formvex\Spoke\Domain\Backup\Contract\ScheduledBackupRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoScheduledBackupRepository
 
     Formvex\Spoke\Domain\Backup\Contract\BackupArchiveStore:
         alias: Formvex\Spoke\Infrastructure\Backup\ZipBackupArchiveStore

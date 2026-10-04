@@ -84,6 +84,8 @@ const initialiseSidebar = () => {
   const openButton = document.querySelector('[data-sidebar-open]');
   const closeButton = document.querySelector('[data-sidebar-close]');
   const toggleButton = document.querySelector('[data-sidebar-toggle]');
+  const toggleIcon = toggleButton?.querySelector('[data-sidebar-collapse-icon]');
+  const toggleLabel = toggleButton?.querySelector('[data-sidebar-collapse-label]');
 
   if (!(sidebar instanceof HTMLElement)) {
     return;
@@ -95,6 +97,16 @@ const initialiseSidebar = () => {
     setPreferenceCookie('formvex_sidebar', state);
     if (toggleButton instanceof HTMLButtonElement) {
       toggleButton.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      toggleButton.setAttribute(
+        'aria-label',
+        collapsed ? 'Expand navigation' : 'Collapse navigation',
+      );
+    }
+    if (toggleIcon instanceof HTMLElement) {
+      toggleIcon.textContent = collapsed ? '›' : '‹';
+    }
+    if (toggleLabel instanceof HTMLElement) {
+      toggleLabel.textContent = collapsed ? 'Expand navigation' : 'Collapse navigation';
     }
   };
 

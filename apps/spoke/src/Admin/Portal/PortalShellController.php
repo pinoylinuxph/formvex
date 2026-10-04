@@ -9,13 +9,17 @@ use Formvex\Spoke\Admin\AuthenticationRequestResolver;
 use Formvex\Spoke\Admin\SettingsRequestResolver;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\Backup\BackupService;
+use Formvex\Spoke\Application\Backup\ScheduledBackupService;
 use Formvex\Spoke\Application\Delivery\DeliveryControlService;
+use Formvex\Spoke\Application\FormChangeObservation\FormChangeObservationService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Application\InstallationSettings\SmtpDiagnosticsService;
 use Formvex\Spoke\Application\Overview\AdministratorOverviewService;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
+use Formvex\Spoke\Domain\Backup\ScheduledBackupFrequency;
+use Formvex\Spoke\Domain\Backup\ScheduledBackupSettings;
 use Formvex\Spoke\Domain\Installation\Contract\Clock;
 use Formvex\Spoke\Domain\InstallationSettings\Exception\InstallationSettingsFailure;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpDiagnosticView;
@@ -50,8 +54,10 @@ final class PortalShellController extends AbstractController
         private readonly SchedulerHealthRepository $schedulerHealthRepository,
         private readonly Clock $clock,
         private readonly BackupService $backupService,
+        private readonly ScheduledBackupService $scheduledBackupService,
         private readonly RecoveryHoldStore $recoveryHoldStore,
         private readonly DeliveryControlService $deliveryControlService,
+        private readonly FormChangeObservationService $formChangeObservationService,
     ) {
     }
 
@@ -112,6 +118,67 @@ final class PortalShellController extends AbstractController
     public function maintenance(Request $request): Response
     {
         return $this->renderDestination($request, 'maintenance');
+    }
+
+    #[Route('/formvex/maintenance/scheduled-backup', name: 'spoke_admin_scheduled_backup_settings', methods: ['POST'])]
+    public function scheduledBackupSettings(Request $request): Response
+    {
+        $sessionId = $this->sessionId($request);
+        $session = $sessionId === null ? null : $this->administratorService->session(
+            $this->runtimeConfiguration->applicationRoot,
+            $sessionId,
+        );
+        if ($session === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($session->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        try {
+            $payload = $request->request->all();
+            $allowed = ['_token', 'enabled', 'frequency', 'weekday', 'hour', 'minute', 'retention_count'];
+            if (array_diff(array_keys($payload), $allowed) !== []) {
+                throw new AdministratorFailure('request_malformed');
+            }
+            if (!$this->administratorService->csrfTokenMatches($session, $request->request->getString('_token'))) {
+                throw new AdministratorFailure('csrf_invalid');
+            }
+            $frequency = ScheduledBackupFrequency::tryFrom($request->request->getString('frequency'));
+            $weekday = filter_var($request->request->getString('weekday'), FILTER_VALIDATE_INT);
+            $hour = filter_var($request->request->getString('hour'), FILTER_VALIDATE_INT);
+            $minute = filter_var($request->request->getString('minute'), FILTER_VALIDATE_INT);
+            $retentionCount = filter_var($request->request->getString('retention_count'), FILTER_VALIDATE_INT);
+            if ($frequency === null || $weekday === false || $hour === false || $minute === false || $retentionCount === false || $weekday < 0 || $weekday > 6 || $hour < 0 || $hour > 23 || $minute < 0 || $minute > 59 || $retentionCount < 1 || $retentionCount > 12) {
+                throw new AdministratorFailure('scheduled_backup_settings_invalid');
+            }
+            $current = $this->scheduledBackupService->settings($this->runtimeConfiguration->applicationRoot);
+            $settings = new ScheduledBackupSettings(
+                $request->request->getString('enabled') === '1',
+                $frequency,
+                $weekday,
+                $hour,
+                $minute,
+                $retentionCount,
+                $current->lastDuePeriod,
+                $current->lastAttemptAt,
+                $current->lastSuccessAt,
+                $current->lastStatus,
+                $current->lastErrorCode,
+                $current->lastCandidateId,
+                $current->lastCleanupAt,
+                $current->updatedAt,
+            );
+            $this->scheduledBackupService->saveSettings($this->runtimeConfiguration->applicationRoot, $settings);
+
+            return $this->redirectToRoute('spoke_admin_maintenance', ['notice' => 'Scheduled backup settings were saved. The hosting scheduler will create the next due verified copy.']);
+        } catch (AdministratorFailure $failure) {
+            $message = $failure->failureCode === 'scheduled_backup_settings_invalid' ? 'Enter a valid schedule and a retention count from 1 to 12.' : 'The scheduled-backup security request could not be verified. Refresh Maintenance and try again.';
+
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => $message]);
+        } catch (Throwable) {
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => 'Scheduled backup settings could not be saved. No existing archive was changed.']);
+        }
     }
 
     #[Route('/formvex/preferences/theme', name: 'spoke_admin_theme', methods: ['POST'])]
@@ -185,8 +252,12 @@ final class PortalShellController extends AbstractController
         $schedulerHealth = null;
         $backupArchives = [];
         $backupError = null;
+        $scheduledBackupSettings = null;
+        $scheduledBackupArchives = [];
+        $scheduledBackupError = null;
         $recoveryHold = null;
         $deliveryControl = null;
+        $formChangeWarningCount = 0;
         $smtpDiagnostics = null;
         if ($destination === 'overview') {
             $overview = $this->overviewService->summary($this->runtimeConfiguration->applicationRoot);
@@ -199,6 +270,17 @@ final class PortalShellController extends AbstractController
                 $settingsSnapshot = $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
             } catch (Throwable) {
                 // The Overview service renders an explicit unavailable state for this source.
+            }
+            try {
+                $formChangeWarningCount = $this->formChangeObservationService->countOpen($this->runtimeConfiguration->applicationRoot);
+            } catch (Throwable) {
+                // Overview keeps the rest of its status projection available while warnings are unavailable.
+            }
+            try {
+                $paths = $this->storageResolver->resolve($this->runtimeConfiguration->applicationRoot);
+                $schedulerHealth = $this->schedulerHealthRepository->status($paths, $this->clock->now()->setTimezone(new DateTimeZone('UTC')));
+            } catch (Throwable) {
+                // Overview keeps scheduler state unavailable rather than claiming a healthy scheduled task.
             }
         } elseif ($destination === 'diagnostics') {
             try {
@@ -227,8 +309,15 @@ final class PortalShellController extends AbstractController
             } catch (Throwable) {
                 $backupError = 'Backup inventory is unavailable until the backup migration and private storage are ready.';
             }
+            try {
+                $scheduledBackupSettings = $this->scheduledBackupService->settings($this->runtimeConfiguration->applicationRoot);
+                $scheduledBackupArchives = $this->scheduledBackupService->list($this->runtimeConfiguration->applicationRoot);
+            } catch (Throwable) {
+                $scheduledBackupError = 'Scheduled backup settings and inventory are unavailable until the current database migration and private storage are ready.';
+            }
         }
         $backupPagination = PaginationView::fromRequest($request, $backupArchives, 'backup_page', 'backup_page_size');
+        $scheduledBackupPagination = PaginationView::fromRequest($request, $scheduledBackupArchives, 'scheduled_backup_page', 'scheduled_backup_page_size');
         $notice = $request->query->getString('notice');
         $error = $request->query->getString('error');
         $response = $this->render('administration/portal.html.twig', [
@@ -250,10 +339,16 @@ final class PortalShellController extends AbstractController
             'schedulerHealth' => $schedulerHealth,
             'deliverySchedulerJob' => $schedulerHealth?->job('delivery'),
             'retentionSchedulerJob' => $schedulerHealth?->job('retention'),
+            'scheduledBackupSchedulerJob' => $schedulerHealth?->job('scheduled_backup'),
             'backupPagination' => $backupPagination,
             'backupError' => $backupError,
+            'scheduledBackupSettings' => $scheduledBackupSettings,
+            'scheduledBackupArchives' => $scheduledBackupArchives,
+            'scheduledBackupPagination' => $scheduledBackupPagination,
+            'scheduledBackupError' => $scheduledBackupError,
             'recoveryHold' => $recoveryHold,
             'deliveryControl' => $deliveryControl,
+            'formChangeWarningCount' => $formChangeWarningCount,
             'smtpDiagnostics' => $smtpDiagnostics ?? SmtpDiagnosticView::unavailable(),
             'smtpTestFieldError' => $smtpTestFieldError,
             'notice' => $actionMessage ?? ($notice !== '' ? $notice : ($error !== '' ? $error : null)),

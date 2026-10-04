@@ -59,9 +59,9 @@
         <span class="fv-sidebar-title">Navigation</span>
         <button class="fv-icon-button fv-sidebar-close" type="button" data-sidebar-close aria-label="Close navigation">×</button>
     </div>
-    <button class="fv-sidebar-collapse" type="button" data-sidebar-toggle aria-controls="fv-sidebar" aria-expanded="{{ sidebarState == 'expanded' ? 'true' : 'false' }}">
-        <span aria-hidden="true">‹</span>
-        <span class="fv-sidebar-collapse-label">Collapse navigation</span>
+    <button class="fv-sidebar-collapse" type="button" data-sidebar-toggle aria-controls="fv-sidebar" aria-expanded="{{ sidebarState == 'expanded' ? 'true' : 'false' }}" aria-label="{{ sidebarState == 'collapsed' ? 'Expand navigation' : 'Collapse navigation' }}">
+        <span class="fv-sidebar-collapse-icon" data-sidebar-collapse-icon aria-hidden="true">{{ sidebarState == 'collapsed' ? '›' : '‹' }}</span>
+        <span class="fv-sidebar-collapse-label" data-sidebar-collapse-label>{{ sidebarState == 'collapsed' ? 'Expand navigation' : 'Collapse navigation' }}</span>
     </button>
     <nav class="fv-nav" aria-label="Primary navigation">
         <ul class="fv-nav-list">

@@ -16,10 +16,11 @@ final readonly class FormResolutionResponse
         public string $captchaProvider = 'turnstile',
         public string $captchaSiteKey = '',
         public string $brandName = 'Noname',
+        public string $sourceFingerprint = '',
     ) {
     }
 
-    /** @return array{schema_version: int, public_form_id: string, configuration_version: int, form_marker: string, captcha: array{enabled: bool, provider: string, site_key: string}, branding: array{brand_name: string}} */
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         return [
@@ -35,6 +36,7 @@ final readonly class FormResolutionResponse
             'branding' => [
                 'brand_name' => $this->brandName,
             ],
+            'source_fingerprint' => $this->sourceFingerprint,
         ];
     }
 }

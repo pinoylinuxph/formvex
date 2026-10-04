@@ -8,6 +8,7 @@ export {
 
 export {
   collectSubmissionData,
+  collectFormChangeObservation,
   createSubmissionEnvelope,
   findFormCandidates,
   initializeQualificationIntegration,

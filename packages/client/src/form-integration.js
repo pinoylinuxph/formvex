@@ -114,6 +114,13 @@ export async function initializeFormIntegration({
         cryptoRef,
         pagePath: windowRef?.location?.pathname || '/',
       });
+      void submitFormChangeObservation(
+        form,
+        resolution,
+        windowRef?.location?.pathname || '/',
+        fetchImpl,
+        cryptoRef,
+      );
       attached.push(form);
     }),
   );
@@ -240,6 +247,53 @@ export function collectSubmissionData(form) {
   }
 
   return { fields, field_shape: fieldShape };
+}
+
+/**
+ * Collect only bounded form structure for administrator change observation.
+ * This intentionally never reads control.value, checked, selected values, or
+ * any other visitor-entered state.
+ */
+export function collectFormChangeObservation(form) {
+  const controls = [];
+  const groups = new Map();
+  const sourceControls = Array.from(form?.querySelectorAll?.('input, textarea, select') ?? []);
+
+  for (const control of sourceControls) {
+    const name = (control.getAttribute('name') || '').trim();
+    const type = controlType(control);
+
+    if (name === '' || !SUPPORTED_TYPES.has(type)) {
+      continue;
+    }
+
+    const groupKey =
+      type === 'radio' || type === 'checkbox'
+        ? `${type}:${name}`
+        : `${type}:${name}:${controls.length}`;
+    const existing = groups.get(groupKey);
+
+    if (existing) {
+      existing.required ||= controlRequired(control);
+      existing.choice_values = uniqueBoundedValues([
+        ...existing.choice_values,
+        ...controlChoiceValues(control, type),
+      ]);
+      continue;
+    }
+
+    const observed = {
+      control_name: name,
+      control_type: type,
+      required: controlRequired(control),
+      max_length: controlMaxLength(control),
+      choice_values: uniqueBoundedValues(controlChoiceValues(control, type)),
+    };
+    groups.set(groupKey, observed);
+    controls.push(observed);
+  }
+
+  return controls.slice(0, 100);
 }
 
 export function createSubmissionEnvelope(
@@ -436,6 +490,62 @@ function attachForm(
   form.addEventListener('invalid', invalid, true);
 }
 
+async function submitFormChangeObservation(form, resolution, pagePath, fetchImpl, cryptoRef) {
+  if (typeof resolution.source_fingerprint !== 'string' || resolution.source_fingerprint === '') {
+    return;
+  }
+
+  const controls = collectFormChangeObservation(form);
+  const sourceFingerprint = await formStructureFingerprint(controls, cryptoRef);
+
+  if (sourceFingerprint === null || sourceFingerprint === resolution.source_fingerprint) {
+    return;
+  }
+
+  try {
+    await fetchImpl(
+      `/formvex/api/v1/forms/${encodeURIComponent(resolution.public_form_id)}/change-observations`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        credentials: 'omit',
+        body: JSON.stringify({
+          schema_version: SUBMISSION_SCHEMA_VERSION,
+          configuration_version: resolution.configuration_version,
+          page_path: pagePath,
+          form_marker: resolution.form_marker,
+          source_fingerprint: sourceFingerprint,
+          controls,
+        }),
+      },
+    );
+  } catch {
+    // Observation is advisory. A network or storage failure must never block the form.
+  }
+}
+
+async function formStructureFingerprint(controls, cryptoRef) {
+  const TextEncoderClass = globalThis.TextEncoder;
+
+  if (typeof cryptoRef?.subtle?.digest !== 'function' || typeof TextEncoderClass !== 'function') {
+    return null;
+  }
+
+  try {
+    const bytes = new TextEncoderClass().encode(JSON.stringify(controls));
+    const digest = await cryptoRef.subtle.digest('SHA-256', bytes);
+
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
+      '',
+    );
+  } catch {
+    return null;
+  }
+}
+
 async function submitEnvelope(resolution, envelope, { fetchImpl, qualificationToken = null }) {
   try {
     const qualification = typeof qualificationToken === 'string' && qualificationToken !== '';
@@ -505,6 +615,49 @@ function controlType(control) {
   return (control.getAttribute('type') || 'text').toLowerCase();
 }
 
+function controlRequired(control) {
+  return control.required === true || control.hasAttribute?.('required') === true;
+}
+
+function controlMaxLength(control) {
+  const value = control.getAttribute('maxlength');
+
+  if (value === null || value === '' || !/^\d+$/u.test(value)) {
+    return 10000;
+  }
+
+  return Math.min(Math.max(Number.parseInt(value, 10), 1), 10000);
+}
+
+function controlChoiceValues(control, type) {
+  if (type === 'select') {
+    return Array.from(control.querySelectorAll?.('option') ?? []).flatMap((option) => {
+      const value =
+        option.hasAttribute?.('value') === true
+          ? option.getAttribute('value')
+          : option.textContent?.trim();
+
+      return typeof value === 'string' && value !== '' ? [value] : [];
+    });
+  }
+
+  if (type === 'radio' || type === 'checkbox') {
+    return [control.getAttribute('value') || 'on'];
+  }
+
+  return [];
+}
+
+function uniqueBoundedValues(values) {
+  return [
+    ...new Set(
+      values
+        .filter((value) => typeof value === 'string' && value !== '')
+        .map((value) => value.slice(0, 256)),
+    ),
+  ].slice(0, 100);
+}
+
 function controlValue(control, type) {
   if (type === 'checkbox') {
     return [control.getAttribute('value') || 'on'];
@@ -536,6 +689,7 @@ function isResolutionPayload(payload, marker) {
     Number.isInteger(payload.configuration_version) &&
     payload.configuration_version > 0 &&
     payload.form_marker === marker &&
+    (!payload.source_fingerprint || /^[0-9a-f]{64}$/u.test(payload.source_fingerprint)) &&
     (!branding ||
       (isObject(branding) && safeBrandName(branding.brand_name) === branding.brand_name)) &&
     (!captcha ||

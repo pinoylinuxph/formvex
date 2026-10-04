@@ -15,6 +15,7 @@ final class LocalBackupOperationLock implements BackupOperationLock
     {
         $lockPath = match ($operation) {
             'backup' => $paths->backupLockFile(),
+            'scheduled_backup' => $paths->scheduledBackupLockFile(),
             'restore' => $paths->restoreLockFile(),
             default => throw new InstallationFailure('backup_operation_invalid'),
         };

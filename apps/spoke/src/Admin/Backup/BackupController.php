@@ -6,6 +6,7 @@ namespace Formvex\Spoke\Admin\Backup;
 
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\Backup\BackupService;
+use Formvex\Spoke\Application\Backup\ScheduledBackupService;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Administration\SessionRecord;
 use Formvex\Spoke\Domain\Backup\BackupFailure;
@@ -26,6 +27,7 @@ final class BackupController extends AbstractController
     public function __construct(
         private readonly LocalAdministratorService $administratorService,
         private readonly BackupService $backupService,
+        private readonly ScheduledBackupService $scheduledBackupService,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
     ) {
     }
@@ -138,6 +140,56 @@ final class BackupController extends AbstractController
             return $this->redirectToRoute('spoke_admin_maintenance', ['error' => 'The selected backup could not be deleted. It may be unavailable or currently downloading. Refresh Maintenance and try again.']);
         } catch (Throwable) {
             return $this->redirectToRoute('spoke_admin_maintenance', ['error' => 'The selected backup could not be deleted safely. No other backup was changed.']);
+        }
+    }
+
+    #[Route('/formvex/maintenance/scheduled-backups/{backupId}/download', name: 'spoke_admin_scheduled_backup_download', methods: ['POST'])]
+    public function scheduledDownload(Request $request, string $backupId): Response
+    {
+        $context = $this->context($request);
+        if ($context === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($context->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+        try {
+            if (!$this->administratorService->csrfTokenMatches($context, $request->request->getString('_token'))) {
+                throw new AdministratorFailure('csrf_invalid');
+            }
+            $download = $this->scheduledBackupService->beginDownload($this->runtimeConfiguration->applicationRoot, $backupId);
+            $response = new StreamedResponse(function () use ($download, $backupId): void {
+                try {
+                    $handle = fopen($download['path'], 'rb');
+                    if ($handle === false) {
+                        return;
+                    }
+                    try {
+                        while (!feof($handle)) {
+                            $chunk = fread($handle, 1024 * 1024);
+                            if ($chunk === false) {
+                                break;
+                            }
+                            echo $chunk;
+                        }
+                    } finally {
+                        fclose($handle);
+                    }
+                } finally {
+                    $this->scheduledBackupService->finishDownload($this->runtimeConfiguration->applicationRoot, $backupId);
+                }
+            });
+            $response->headers->set('Content-Type', 'application/zip');
+            $response->headers->set('Content-Disposition', 'attachment; filename="scheduled-backup-' . preg_replace('/[^a-zA-Z0-9-]/', '', $backupId) . '.zip"');
+            $response->headers->set('Cache-Control', 'no-store, private');
+            $response->headers->set('X-Content-Type-Options', 'nosniff');
+            $response->headers->set('Content-Length', (string) $download['archive']->sizeBytes);
+
+            return $response;
+        } catch (AdministratorFailure|BackupFailure) {
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => 'The selected scheduled backup could not be downloaded. Refresh Maintenance and try again.']);
+        } catch (Throwable) {
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => 'The selected scheduled backup could not be streamed safely. Refresh Maintenance and try again.']);
         }
     }
 

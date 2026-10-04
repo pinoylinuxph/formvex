@@ -23,6 +23,51 @@
         variant: messageVariant,
     } only %}
 
+    {% if changeWarnings is not empty %}
+        <section class="fv-alert fv-alert-warning" aria-labelledby="form-change-warnings-heading">
+            <div>
+                <strong id="form-change-warnings-heading">Website form changes need review.</strong>
+                <span>The installed page reports a different form structure than the active approved configuration. Review the form before treating the change as intentional.</span>
+            </div>
+            <div class="fv-table-container" tabindex="0" aria-label="Form change warnings table">
+                <table class="fv-table">
+                    <thead>
+                    <tr><th scope="col">Page</th><th scope="col">Form marker</th><th scope="col">Changes</th><th scope="col">Last observed</th><th scope="col"><span class="fv-visually-hidden">Actions</span></th></tr>
+                    </thead>
+                    <tbody>
+                    {% for warning in changeWarnings %}
+                        <tr>
+                            <th scope="row"><a href="{{ path('spoke_admin_form_edit', {publicFormId: warning.formPublicId}) }}">{{ warning.pagePath }}</a></th>
+                            <td><code>{{ warning.formMarker }}</code></td>
+                            <td>
+                                <ul class="fv-compact-list">
+                                    {% for difference in warning.differences %}
+                                        <li>{{ difference.kind|replace({'_': ' '})|title }} <code>{{ difference.control_key }}</code></li>
+                                    {% endfor %}
+                                </ul>
+                            </td>
+                            <td><time datetime="{{ warning.lastObservedAt|date('c') }}">{{ warning.lastObservedAt|date('Y-m-d H:i') }}</time></td>
+                            <td>
+                                <div class="fv-inline-actions">
+                                    <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_form_edit', {publicFormId: warning.formPublicId}) }}">Review form</a>
+                                    <form method="post" action="{{ path('spoke_admin_form_change_observation_resolve', {observationId: warning.publicId}) }}">
+                                        <input type="hidden" name="_token" value="{{ csrfToken }}">
+                                        <button class="fv-button fv-button-secondary" type="submit">Mark reviewed</button>
+                                    </form>
+                                    <form method="post" action="{{ path('spoke_admin_form_change_observation_discard', {observationId: warning.publicId}) }}">
+                                        <input type="hidden" name="_token" value="{{ csrfToken }}">
+                                        <button class="fv-button fv-button-danger" type="submit">Discard</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    {% endif %}
+
     <section class="fv-panel">
         {% if forms is empty %}
             {% include '@platform_ui/components/empty_state.html.twig' with {

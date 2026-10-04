@@ -19,6 +19,12 @@ final class PdoSchedulerHealthRepository implements SchedulerHealthRepository
 
     private const RETENTION_STALE_SECONDS = 7200;
 
+    private const SCHEDULED_BACKUP_DAILY_STALE_SECONDS = 172800;
+
+    private const SCHEDULED_BACKUP_WEEKLY_STALE_SECONDS = 1209600;
+
+    private const SCHEDULED_BACKUP_MONTHLY_STALE_SECONDS = 5184000;
+
     public function status(PrivateStoragePaths $paths, DateTimeImmutable $now): SchedulerHealth
     {
         try {
@@ -26,6 +32,7 @@ final class PdoSchedulerHealthRepository implements SchedulerHealthRepository
             $jobs = [
                 'delivery' => $this->delivery($connection, $now),
                 'retention' => $this->retention($connection, $now),
+                'scheduled_backup' => $this->scheduledBackup($connection, $now),
             ];
 
             return $this->health($jobs);
@@ -33,6 +40,7 @@ final class PdoSchedulerHealthRepository implements SchedulerHealthRepository
             $jobs = [
                 'delivery' => $this->unavailable('delivery', 'Delivery worker', 'every minute', 'formvex:spoke:delivery:run', 'The delivery worker status could not be read from private storage.'),
                 'retention' => $this->unavailable('retention', 'Retention cleanup', 'hourly', 'formvex:spoke:retention:run', 'The retention cleanup status could not be read from private storage.'),
+                'scheduled_backup' => $this->unavailable('scheduled_backup', 'Scheduled backups', 'configured schedule', 'formvex:spoke:backup:run', 'The scheduled-backup status could not be read from private storage.'),
             ];
 
             return new SchedulerHealth($jobs, 'failed', 'danger', 'Scheduler health could not be read from private storage. Review the local installation before relying on scheduled processing.');
@@ -204,6 +212,117 @@ final class PdoSchedulerHealthRepository implements SchedulerHealthRepository
         );
     }
 
+    private function scheduledBackup(PDO $connection, DateTimeImmutable $now): SchedulerJobStatus
+    {
+        if (!$this->hasTable($connection, 'scheduled_backup_settings')) {
+            return new SchedulerJobStatus(
+                'scheduled_backup',
+                'Scheduled backups',
+                'Creates verified private backup copies on the configured schedule.',
+                'not configured',
+                'formvex:spoke:backup:run',
+                'disabled',
+                'success',
+                null,
+                null,
+                'Scheduled backups are not configured in this installation yet. Apply the current database migration before enabling the schedule.',
+                'Run the installation or upgrade migration, then open Maintenance to configure scheduled backups.',
+            );
+        }
+        $statement = $connection->query('SELECT enabled, frequency, weekday, hour, minute, last_status, last_attempt_at, last_success_at, last_error_code FROM scheduled_backup_settings WHERE singleton_id = 1');
+        $row = $statement === false ? false : $statement->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return $this->unavailable('scheduled_backup', 'Scheduled backups', 'configured schedule', 'formvex:spoke:backup:run', 'Scheduled-backup settings have no status record yet.');
+        }
+        $enabled = $this->integerValue($row['enabled'] ?? 0) === 1;
+        $frequency = is_string($row['frequency'] ?? null) ? $row['frequency'] : 'configured';
+        $schedule = sprintf('%s at %02d:%02d UTC', ucfirst($frequency), $this->integerValue($row['hour'] ?? 0), $this->integerValue($row['minute'] ?? 0));
+        if (!$enabled) {
+            return new SchedulerJobStatus(
+                'scheduled_backup',
+                'Scheduled backups',
+                'Creates verified private backup copies on the configured schedule.',
+                $schedule,
+                'formvex:spoke:backup:run',
+                'disabled',
+                'success',
+                $this->format($this->timestamp($row['last_success_at'] ?? null)),
+                $this->format($this->timestamp($row['last_attempt_at'] ?? null)),
+                'Scheduled backups are disabled. No archive will be created until an administrator enables the schedule.',
+                'Open Maintenance and enable scheduled backups when this installation is ready for automatic copies.',
+            );
+        }
+
+        $lastAttemptAt = $this->timestamp($row['last_attempt_at'] ?? null);
+        $lastSuccessAt = $this->timestamp($row['last_success_at'] ?? null);
+        $lastStatus = is_string($row['last_status'] ?? null) ? $row['last_status'] : '';
+        $errorCode = is_string($row['last_error_code'] ?? null) ? $row['last_error_code'] : '';
+        if (in_array($lastStatus, ['failed', 'recovery_hold'], true)) {
+            return new SchedulerJobStatus(
+                'scheduled_backup',
+                'Scheduled backups',
+                'Creates verified private backup copies on the configured schedule.',
+                $schedule,
+                'formvex:spoke:backup:run',
+                'failed',
+                'danger',
+                $this->format($lastSuccessAt),
+                $this->format($lastAttemptAt),
+                $lastStatus === 'recovery_hold' ? 'The latest scheduled backup was deferred because the installation is in recovery hold.' : 'The latest scheduled backup did not complete safely' . ($errorCode !== '' ? ' (code: ' . $errorCode . ').' : '.'),
+                'Correct the reported private-storage or recovery condition, run the scheduled-backup command, and refresh this page.',
+            );
+        }
+        if ($lastSuccessAt === null) {
+            return new SchedulerJobStatus(
+                'scheduled_backup',
+                'Scheduled backups',
+                'Creates verified private backup copies on the configured schedule.',
+                $schedule,
+                'formvex:spoke:backup:run',
+                'not_confirmed',
+                'warning',
+                null,
+                $this->format($lastAttemptAt),
+                'Scheduled backups are enabled but no successful run has been recorded yet.',
+                'Ensure the hosting scheduler invokes the scheduled-backup command, then refresh Maintenance after its first successful run.',
+            );
+        }
+        $staleAfter = match ($frequency) {
+            'daily' => self::SCHEDULED_BACKUP_DAILY_STALE_SECONDS,
+            'weekly' => self::SCHEDULED_BACKUP_WEEKLY_STALE_SECONDS,
+            default => self::SCHEDULED_BACKUP_MONTHLY_STALE_SECONDS,
+        };
+        if ($this->age($lastSuccessAt, $now) >= $staleAfter) {
+            return new SchedulerJobStatus(
+                'scheduled_backup',
+                'Scheduled backups',
+                'Creates verified private backup copies on the configured schedule.',
+                $schedule,
+                'formvex:spoke:backup:run',
+                'stale',
+                'warning',
+                $this->format($lastSuccessAt),
+                $this->format($lastAttemptAt),
+                'Scheduled backups have not reported a successful run within the expected interval.',
+                'Inspect the hosting scheduler, run the scheduled-backup command, and refresh this page.',
+            );
+        }
+
+        return new SchedulerJobStatus(
+            'scheduled_backup',
+            'Scheduled backups',
+            'Creates verified private backup copies on the configured schedule.',
+            $schedule,
+            'formvex:spoke:backup:run',
+            'healthy',
+            'success',
+            $this->format($lastSuccessAt),
+            $this->format($lastAttemptAt),
+            'The scheduled-backup task reported a successful verified archive within the expected interval.',
+            'No scheduler action is required.',
+        );
+    }
+
     /** @param array<string, SchedulerJobStatus> $jobs */
     private function health(array $jobs): SchedulerHealth
     {
@@ -269,5 +388,10 @@ final class PdoSchedulerHealthRepository implements SchedulerHealthRepository
     private function age(DateTimeImmutable $timestamp, DateTimeImmutable $now): int
     {
         return max(0, $now->getTimestamp() - $timestamp->getTimestamp());
+    }
+
+    private function integerValue(mixed $value): int
+    {
+        return is_int($value) ? $value : (is_string($value) && is_numeric($value) ? (int) $value : 0);
     }
 }

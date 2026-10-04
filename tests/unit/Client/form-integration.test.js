@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  collectFormChangeObservation,
   collectSubmissionData,
   createSubmissionEnvelope,
   findFormCandidates,
@@ -53,6 +54,38 @@ function form(id, controls, marker = '') {
 }
 
 describe('website form integration client', () => {
+  it('collects bounded structure without reading visitor-entered values', () => {
+    const option = {
+      textContent: 'Support',
+      hasAttribute: (attribute) => attribute === 'value',
+      getAttribute: (attribute) => (attribute === 'value' ? 'support' : null),
+    };
+    const structuralControl = {
+      tagName: 'SELECT',
+      required: true,
+      querySelectorAll: () => [option],
+      getAttribute(attribute) {
+        if (attribute === 'name') return 'topic';
+        if (attribute === 'type') return null;
+        if (attribute === 'maxlength') return '80';
+        throw new Error(`Visitor value was read: ${attribute}`);
+      },
+    };
+    const formRef = {
+      querySelectorAll: () => [structuralControl],
+    };
+
+    expect(collectFormChangeObservation(formRef)).toEqual([
+      {
+        control_name: 'topic',
+        control_type: 'select',
+        required: true,
+        max_length: 80,
+        choice_values: ['support'],
+      },
+    ]);
+  });
+
   it('serializes only supported deliberate-submit controls and preserves empty group shape', () => {
     const formRef = form('contact-form', [
       control({ name: 'name', value: '<b>Ada</b>' }),

@@ -46,6 +46,11 @@ final readonly class PrivateStoragePaths
         return $this->runtime . DIRECTORY_SEPARATOR . 'backup.lock';
     }
 
+    public function scheduledBackupLockFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'scheduled-backup.lock';
+    }
+
     public function restoreLockFile(): string
     {
         return $this->runtime . DIRECTORY_SEPARATOR . 'restore.lock';

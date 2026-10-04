@@ -6,6 +6,7 @@ namespace Formvex\Spoke\Infrastructure\Persistence;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Formvex\Spoke\Domain\FormChangeObservation\FormChangeObservationFingerprint;
 use Formvex\Spoke\Domain\FormConfiguration\Contract\FormConfigurationStore;
 use Formvex\Spoke\Domain\FormConfiguration\Exception\FormConfigurationFailure;
 use Formvex\Spoke\Domain\FormConfiguration\FormConfigurationDetails;
@@ -329,7 +330,7 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
     {
         $connection = $this->connection($paths);
         $statement = $connection->prepare(
-            "SELECT f.public_id, v.version_number, p.form_marker, v.captcha_enabled, v.captcha_site_key
+            "SELECT f.public_id, v.id, v.version_number, p.form_marker, v.captcha_enabled, v.captcha_site_key
              FROM form_configuration_version_pages p
              INNER JOIN form_configuration_versions v ON v.id = p.version_id AND v.state = 'active'
              INNER JOIN form_configurations f ON f.id = v.form_id AND f.deleted_at IS NULL
@@ -354,6 +355,7 @@ final class PdoFormConfigurationStore implements FormConfigurationStore
             $this->integerValue($row, 'captcha_enabled') === 1,
             'turnstile',
             $this->stringValue($row, 'captcha_site_key'),
+            FormChangeObservationFingerprint::fromFields($this->fields($connection, $this->integerValue($row, 'id'))),
         );
     }
 

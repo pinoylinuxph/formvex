@@ -85,6 +85,7 @@ final class FormResolutionController extends AbstractController
                 $resolution->captchaProvider,
                 $resolution->captchaSiteKey,
                 $this->brandingService->viewModel($this->runtimeConfiguration->applicationRoot)['brandName'],
+                $resolution->sourceFingerprint,
             )->toArray(), Response::HTTP_OK);
             $this->headers($response, $origin);
 
