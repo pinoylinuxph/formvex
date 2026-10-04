@@ -88,7 +88,10 @@ final readonly class ReleaseMetadata
         if (!is_array($parts)
             || ($parts['scheme'] ?? null) !== 'https'
             || ($parts['host'] ?? null) !== $allowedHost
-            || isset($parts['user'], $parts['pass'], $parts['port'], $parts['fragment'])) {
+            || isset($parts['user'])
+            || isset($parts['pass'])
+            || isset($parts['port'])
+            || isset($parts['fragment'])) {
             throw new ReleaseCheckFailure('metadata_url_invalid', 'The release metadata contained a link outside the trusted HTTPS host.');
         }
 
