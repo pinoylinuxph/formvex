@@ -114,6 +114,41 @@ final class ReleaseCheckServiceTest extends TestCase
         self::assertSame('stale', $failed->displayStatus($this->clock->now()));
     }
 
+    public function testCurrentStateBecomesStaleAndRecoversAfterASuccessfulRefresh(): void
+    {
+        $this->repository->enabled = true;
+        $this->client->metadata = $this->metadata('1.0.0', 'normal');
+        $current = $this->service()->run($this->root, true);
+
+        self::assertSame('current', $current->status);
+        $this->clock->advance('+3 days');
+        self::assertSame('stale', $this->service()->state($this->root)->displayStatus($this->clock->now()));
+
+        $recovered = $this->service()->run($this->root, true);
+
+        self::assertSame('current', $recovered->status);
+        self::assertSame('current', $recovered->displayStatus($this->clock->now()));
+        self::assertSame($this->clock->now()->format('c'), $recovered->lastSuccessfulAt?->format('c'));
+    }
+
+    public function testFailedStateRecoversToCurrentAfterTheSourceBecomesAvailable(): void
+    {
+        $this->repository->enabled = true;
+        $this->client->metadata = $this->metadata('1.0.0', 'normal');
+        $this->service()->run($this->root, true);
+
+        $this->client->failure = new ReleaseCheckFailure('metadata_transport_failed', 'The metadata source timed out.');
+        $failed = $this->service()->run($this->root, true);
+        self::assertSame('failed', $failed->status);
+        self::assertSame('metadata_transport_failed', $failed->failureCode);
+
+        $recovered = $this->service()->run($this->root, true);
+
+        self::assertSame('current', $recovered->status);
+        self::assertNull($recovered->failureCode);
+        self::assertNull($recovered->failureMessage);
+    }
+
     public function testConcurrentCheckReturnsSafeInProgressStateWithoutContactingSource(): void
     {
         $this->repository->enabled = true;
