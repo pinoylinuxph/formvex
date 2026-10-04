@@ -15,6 +15,7 @@ use Formvex\Spoke\Application\FormChangeObservation\FormChangeObservationService
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Application\InstallationSettings\SmtpDiagnosticsService;
 use Formvex\Spoke\Application\Overview\AdministratorOverviewService;
+use Formvex\Spoke\Application\Release\ReleaseCheckService;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
 use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
@@ -24,6 +25,7 @@ use Formvex\Spoke\Domain\Installation\Contract\Clock;
 use Formvex\Spoke\Domain\InstallationSettings\Exception\InstallationSettingsFailure;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpDiagnosticView;
 use Formvex\Spoke\Domain\InstallationSettings\SmtpTestStatus;
+use Formvex\Spoke\Domain\Release\ReleaseCheckFailure;
 use Formvex\Spoke\Domain\Retention\Contract\RetentionRepository;
 use Formvex\Spoke\Domain\Scheduler\Contract\SchedulerHealthRepository;
 use Formvex\Spoke\Domain\Scheduler\SchedulerHealth;
@@ -58,6 +60,7 @@ final class PortalShellController extends AbstractController
         private readonly RecoveryHoldStore $recoveryHoldStore,
         private readonly DeliveryControlService $deliveryControlService,
         private readonly FormChangeObservationService $formChangeObservationService,
+        private readonly ReleaseCheckService $releaseCheckService,
     ) {
     }
 
@@ -181,6 +184,73 @@ final class PortalShellController extends AbstractController
         }
     }
 
+    #[Route('/formvex/maintenance/release-check', name: 'spoke_admin_release_check_settings', methods: ['POST'])]
+    public function releaseCheckSettings(Request $request): Response
+    {
+        $sessionId = $this->sessionId($request);
+        $session = $sessionId === null ? null : $this->administratorService->session($this->runtimeConfiguration->applicationRoot, $sessionId);
+        if ($session === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($session->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        try {
+            $payload = $request->request->all();
+            if (array_diff(array_keys($payload), ['_token', 'enabled']) !== []) {
+                throw new AdministratorFailure('request_malformed');
+            }
+            if (!$this->administratorService->csrfTokenMatches($session, $request->request->getString('_token'))) {
+                throw new AdministratorFailure('csrf_invalid');
+            }
+            $enabled = $request->request->getString('enabled') === '1';
+            $this->releaseCheckService->saveEnabled($this->runtimeConfiguration->applicationRoot, $enabled);
+
+            return $this->redirectToRoute('spoke_admin_maintenance', ['notice' => $enabled
+                ? 'Release checks are enabled. The hosting scheduler should run the daily release-check command.'
+                : 'Release checks are disabled. No release metadata request will be made.']);
+        } catch (AdministratorFailure $failure) {
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => $failure->failureCode === 'csrf_invalid'
+                ? 'The release-check settings request could not be verified. Refresh Maintenance and try again.'
+                : 'The release-check settings request was malformed.']);
+        } catch (Throwable) {
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => 'Release-check settings could not be saved. The previous setting remains active.']);
+        }
+    }
+
+    #[Route('/formvex/maintenance/release-check/acknowledge', name: 'spoke_admin_release_check_acknowledge', methods: ['POST'])]
+    public function acknowledgeRelease(Request $request): Response
+    {
+        $sessionId = $this->sessionId($request);
+        $session = $sessionId === null ? null : $this->administratorService->session($this->runtimeConfiguration->applicationRoot, $sessionId);
+        if ($session === null) {
+            return $this->redirectToRoute('spoke_admin_login');
+        }
+        if ($session->mustChangePassword) {
+            return $this->redirectToRoute('spoke_admin_password_change');
+        }
+
+        try {
+            $payload = $request->request->all();
+            if (array_diff(array_keys($payload), ['_token', 'release_version']) !== []) {
+                throw new AdministratorFailure('request_malformed');
+            }
+            if (!$this->administratorService->csrfTokenMatches($session, $request->request->getString('_token'))) {
+                throw new AdministratorFailure('csrf_invalid');
+            }
+            $this->releaseCheckService->acknowledge($this->runtimeConfiguration->applicationRoot, $request->request->getString('release_version'), 'admin');
+
+            return $this->redirectToRoute('spoke_admin_maintenance', ['notice' => 'The release notice was acknowledged for this exact release.']);
+        } catch (AdministratorFailure) {
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => 'The release acknowledgement could not be verified. Refresh Maintenance and try again.']);
+        } catch (ReleaseCheckFailure $failure) {
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => $failure->getMessage()]);
+        } catch (Throwable) {
+            return $this->redirectToRoute('spoke_admin_maintenance', ['error' => 'The release notice could not be acknowledged. Refresh Maintenance and review the current result.']);
+        }
+    }
+
     #[Route('/formvex/preferences/theme', name: 'spoke_admin_theme', methods: ['POST'])]
     public function theme(Request $request): Response
     {
@@ -259,6 +329,20 @@ final class PortalShellController extends AbstractController
         $deliveryControl = null;
         $formChangeWarningCount = 0;
         $smtpDiagnostics = null;
+        $releaseCheckSettings = null;
+        $releaseCheckState = null;
+        $releaseCheckStatus = null;
+        $releaseCheckNoticeVisible = false;
+        if ($destination === 'overview' || $destination === 'maintenance') {
+            try {
+                $releaseCheckSettings = $this->releaseCheckService->settings($this->runtimeConfiguration->applicationRoot);
+                $releaseCheckState = $this->releaseCheckService->state($this->runtimeConfiguration->applicationRoot);
+                $releaseCheckStatus = $releaseCheckState->displayStatus($this->clock->now());
+                $releaseCheckNoticeVisible = $releaseCheckState->noticeVisible();
+            } catch (Throwable) {
+                // Release-check state remains explicitly unavailable until the Unit 25 migration is ready.
+            }
+        }
         if ($destination === 'overview') {
             $overview = $this->overviewService->summary($this->runtimeConfiguration->applicationRoot);
             try {
@@ -351,6 +435,10 @@ final class PortalShellController extends AbstractController
             'formChangeWarningCount' => $formChangeWarningCount,
             'smtpDiagnostics' => $smtpDiagnostics ?? SmtpDiagnosticView::unavailable(),
             'smtpTestFieldError' => $smtpTestFieldError,
+            'releaseCheckSettings' => $releaseCheckSettings,
+            'releaseCheckState' => $releaseCheckState,
+            'releaseCheckStatus' => $releaseCheckStatus,
+            'releaseCheckNoticeVisible' => $releaseCheckNoticeVisible,
             'notice' => $actionMessage ?? ($notice !== '' ? $notice : ($error !== '' ? $error : null)),
             'noticeVariant' => $actionMessage !== null ? $actionVariant : ($error !== '' ? 'danger' : 'information'),
         ]);

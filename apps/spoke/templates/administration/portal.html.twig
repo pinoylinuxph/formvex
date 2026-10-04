@@ -32,6 +32,15 @@
     } only %}
 
     {% if isOverview %}
+        {% if releaseCheckState and releaseCheckStatus in ['available', 'stale', 'failed', 'incompatible'] %}
+            <div class="fv-alert fv-alert-{{ releaseCheckStatus in ['available', 'incompatible'] ? 'warning' : 'information' }}" role="status">
+                <strong>Release information needs review.</strong>
+                <span>
+                    {% if releaseCheckStatus == 'available' %}Release {{ releaseCheckState.availableVersion }} is available.{% elseif releaseCheckStatus == 'stale' %}Release information is older than 48 hours.{% elseif releaseCheckStatus == 'incompatible' %}The available release is not compatible with this installation.{% else %}The latest release-information check did not complete successfully.{% endif %}
+                </span>
+                <a class="fv-button fv-button-secondary" href="{{ path('spoke_admin_maintenance') }}">Review Maintenance</a>
+            </div>
+        {% endif %}
         {% if deliveryControl is not null and deliveryControl.isPaused() %}
             <div class="fv-alert fv-alert-warning" role="status">
                 <strong>Contact delivery is paused.</strong>
@@ -300,6 +309,71 @@
         {% if recoveryHold %}
             <div class="fv-alert fv-alert-danger" role="alert"><strong>Recovery hold is active.</strong><span>The installation is unavailable while the hosting administrator completes or repairs a server-side restore. Backup actions are paused.</span></div>
         {% endif %}
+
+        <section class="fv-maintenance-section" aria-labelledby="release-guidance-heading">
+            <header class="fv-section-heading fv-section-heading-inline">
+                <div>
+                    <p class="fv-eyebrow">Release safety</p>
+                    <h2 id="release-guidance-heading">Release information and upgrade guidance</h2>
+                    <p>Optional daily release information is checked by the hosting scheduler. This portal never downloads, installs, or replaces application files.</p>
+                </div>
+                {% if releaseCheckStatus %}<span class="fv-status-badge fv-status-badge-{{ releaseCheckStatus in ['current'] ? 'success' : (releaseCheckStatus in ['disabled', 'never_checked'] ? 'neutral' : 'warning') }}">{{ releaseCheckStatus|replace({'_': ' '})|title }}</span>{% endif %}
+            </header>
+            {% if releaseCheckSettings %}
+                <form class="fv-form" method="post" action="{{ path('spoke_admin_release_check_settings') }}">
+                    <input type="hidden" name="_token" value="{{ csrfToken }}">
+                    <label class="fv-checkbox" for="release-check-enabled"><input id="release-check-enabled" name="enabled" type="checkbox" value="1"{% if releaseCheckSettings.enabled %} checked{% endif %}> Enable the once-daily HTTPS release-information check</label>
+                    <p class="fv-field-help">Only bounded release metadata is requested. No submissions, visitor values, SMTP settings, backup contents, cookies, or installation secrets are sent.</p>
+                    <div class="fv-form-actions"><button class="fv-button fv-button-secondary" type="submit">Save release-check setting</button></div>
+                </form>
+            {% else %}
+                <div class="fv-alert fv-alert-warning" role="status"><strong>Release-check state unavailable.</strong><span>Run the current database migration before changing this setting.</span></div>
+            {% endif %}
+            {% if releaseCheckState %}
+                <dl class="fv-detail-list">
+                    <div><dt>Installed release</dt><dd>{{ releaseCheckState.currentVersion }}</dd></div>
+                    <div><dt>Last successful check</dt><dd>{% if releaseCheckState.lastSuccessfulAt %}<time datetime="{{ releaseCheckState.lastSuccessfulAt|date('c') }}">{{ releaseCheckState.lastSuccessfulAt|date('Y-m-d H:i:s T') }}</time>{% else %}Not recorded{% endif %}</dd></div>
+                    {% if releaseCheckState.lastAttemptAt %}<div><dt>Latest attempt</dt><dd><time datetime="{{ releaseCheckState.lastAttemptAt|date('c') }}">{{ releaseCheckState.lastAttemptAt|date('Y-m-d H:i:s T') }}</time></dd></div>{% endif %}
+                    {% if releaseCheckState.availableVersion %}<div><dt>Available release</dt><dd>{{ releaseCheckState.availableVersion }} <span class="fv-status-badge fv-status-badge-{{ releaseCheckState.severity == 'critical' ? 'danger' : 'warning' }}">{{ releaseCheckState.severity|title }}</span></dd></div>{% endif %}
+                </dl>
+                {% if releaseCheckStatus == 'stale' %}
+                    <div class="fv-alert fv-alert-warning" role="alert"><strong>Release information is stale.</strong><span>No successful check has been recorded within 48 hours. Inspect the scheduler and the fixed metadata endpoint before relying on the guidance below.</span></div>
+                {% elseif releaseCheckStatus == 'failed' %}
+                    <div class="fv-alert fv-alert-warning" role="alert"><strong>Release information could not be refreshed.</strong><span>{{ releaseCheckState.failureMessage }}</span></div>
+                {% elseif releaseCheckStatus == 'unavailable' %}
+                    <div class="fv-alert fv-alert-warning" role="status"><strong>Release information is unavailable.</strong><span>The optional check is enabled, but the trusted metadata source is not currently available.</span></div>
+                {% endif %}
+                {% if releaseCheckState.status == 'available' and releaseCheckState.availableVersion %}
+                    <div class="fv-alert fv-alert-warning" role="alert">
+                        <strong>Backup warning before any upgrade.</strong>
+                        <span>Create and verify a Unit 17 <code>pre_upgrade</code> backup immediately before the server-side upgrade. A scheduled backup is not a substitute for that final checkpoint.</span>
+                        {% if scheduledBackupSettings and scheduledBackupSettings.enabled and scheduledBackupSettings.lastSuccessAt %}
+                            <span>Scheduled backup readiness: the latest recorded scheduled copy completed at <time datetime="{{ scheduledBackupSettings.lastSuccessAt|date('c') }}">{{ scheduledBackupSettings.lastSuccessAt|date('Y-m-d H:i:s T') }}</time>. Verify that it is still healthy before continuing.</span>
+                        {% else %}
+                            <span>Scheduled backup readiness: no recent verified scheduled copy is confirmed here. Treat the installation as not backup-ready until Maintenance shows a successful scheduled result.</span>
+                        {% endif %}
+                    </div>
+                    <div class="fv-detail-callout">
+                        <strong>Manual upgrade guidance for {{ releaseCheckState.availableVersion }}</strong>
+                        <ol>
+                            <li>Read the <a href="{{ releaseCheckState.releaseNotesUrl }}" rel="noopener noreferrer">release notes</a> and obtain the package from the <a href="{{ releaseCheckState.packageUrl }}" rel="noopener noreferrer">allowlisted package link</a>.</li>
+                            <li>Verify the package SHA-256 digest manually: <code>{{ releaseCheckState.packageSha256 }}</code>.</li>
+                            <li>Create the final private checkpoint: <code>php apps/spoke/bin/console formvex:spoke:backup:create --application-root=/path/to/private-root --kind=pre_upgrade</code>.</li>
+                            <li>Follow the server-side manual upgrade procedure. This portal does not execute the upgrade.</li>
+                        </ol>
+                    </div>
+                    {% if releaseCheckState.canAcknowledge() %}
+                        <form method="post" action="{{ path('spoke_admin_release_check_acknowledge') }}">
+                            <input type="hidden" name="_token" value="{{ csrfToken }}">
+                            <input type="hidden" name="release_version" value="{{ releaseCheckState.availableVersion }}">
+                            <button class="fv-button fv-button-secondary" type="submit">Acknowledge this release notice</button>
+                        </form>
+                    {% elseif releaseCheckState.severity == 'critical' %}
+                        <p class="fv-field-help">Critical release notices remain visible until a successful check reports a different state or the installation is upgraded.</p>
+                    {% endif %}
+                {% endif %}
+            {% endif %}
+        </section>
 
         <section class="fv-maintenance-section" aria-labelledby="scheduled-backup-heading">
             <header class="fv-section-heading fv-section-heading-inline">

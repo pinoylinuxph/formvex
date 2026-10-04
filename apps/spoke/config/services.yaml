@@ -109,6 +109,10 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Spoke\Migrations\Version000020CreateReleaseNotifications:
+        autowire: true
+        autoconfigure: true
+
     Formvex\Spoke\Domain\FormChangeObservation\Contract\FormChangeObservationRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoFormChangeObservationRepository
 
@@ -190,6 +194,23 @@ services:
 
     Formvex\Spoke\Domain\Release\Contract\UpgradeOperationLock:
         alias: Formvex\Spoke\Infrastructure\Filesystem\LocalUpgradeOperationLock
+
+    Formvex\Spoke\Domain\Release\Contract\ReleaseCheckRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoReleaseCheckRepository
+
+    Formvex\Spoke\Domain\Release\Contract\ReleaseCheckLock:
+        alias: Formvex\Spoke\Infrastructure\Filesystem\LocalReleaseCheckLock
+
+    Formvex\Spoke\Domain\Release\Contract\ReleaseMetadataClient:
+        alias: Formvex\Spoke\Infrastructure\Release\FixedReleaseMetadataClient
+
+    Formvex\Spoke\Infrastructure\Release\CurrentReleaseVersionReader:
+        arguments:
+            $projectRoot: '%kernel.project_dir%'
+
+    Formvex\Spoke\Infrastructure\Release\FixedReleaseMetadataClient:
+        arguments:
+            $metadataUrl: '%env(default::FORMVEX_RELEASE_METADATA_URL)%'
 
     Formvex\Spoke\Domain\Release\Contract\UpgradeInFlightTracker:
         alias: Formvex\Spoke\Infrastructure\Filesystem\LocalUpgradeInFlightTracker

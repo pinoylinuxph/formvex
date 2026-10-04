@@ -80,4 +80,9 @@ final readonly class PrivateStoragePaths
     {
         return $this->runtime . DIRECTORY_SEPARATOR . 'upgrade-inflight.lock';
     }
+
+    public function releaseCheckLockFile(): string
+    {
+        return $this->runtime . DIRECTORY_SEPARATOR . 'release-check.lock';
+    }
 }
