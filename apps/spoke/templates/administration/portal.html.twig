@@ -32,6 +32,12 @@
     } only %}
 
     {% if isOverview %}
+        {% if deliveryControl is not null and deliveryControl.isPaused() %}
+            <div class="fv-alert fv-alert-warning" role="status">
+                <strong>Contact delivery is paused.</strong>
+                <span>Valid visitor submissions can still be accepted while storage is available. <a href="{{ path('spoke_admin_delivery') }}">Review Delivery</a> to resume contact-message delivery.</span>
+            </div>
+        {% endif %}
         {% if overview.warnings is not empty %}
             <section class="fv-overview-attention" aria-labelledby="overview-attention-heading">
                 <header class="fv-overview-attention-header">

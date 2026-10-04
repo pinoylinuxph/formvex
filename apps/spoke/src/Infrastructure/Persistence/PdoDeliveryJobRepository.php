@@ -23,13 +23,19 @@ final class PdoDeliveryJobRepository implements DeliveryJobRepository
         $limit = max(1, min(100, $limit));
         $timestamp = $this->formatTimestamp($now);
         $cycleSchema = $this->hasTable($connection, 'delivery_attempt_cycles') && $this->hasColumn($connection, 'delivery_attempts', 'cycle_id');
+        $pauseSchema = $this->hasTable($connection, 'delivery_control')
+            && $this->hasTable($connection, 'submissions')
+            && $this->hasColumn($connection, 'submissions', 'is_qualification_test');
 
         try {
             $connection->exec('BEGIN IMMEDIATE TRANSACTION');
             $this->recoverStaleClaims($connection, $timestamp);
             $columns = $cycleSchema ? 'id, job_id, attempt_count, snapshot_json, active_cycle_id' : 'id, job_id, attempt_count, snapshot_json';
+            $eligibility = $pauseSchema
+                ? " AND (COALESCE((SELECT state FROM delivery_control WHERE singleton_id = 1), 'running') = 'running' OR EXISTS (SELECT 1 FROM submissions qualification_submission WHERE qualification_submission.id = delivery_jobs.submission_id AND qualification_submission.is_qualification_test = 1))"
+                : '';
             $statement = $connection->prepare(
-                "SELECT {$columns} FROM delivery_jobs WHERE state = 'queued' AND due_at <= :due_at ORDER BY due_at ASC, id ASC LIMIT {$limit}",
+                "SELECT {$columns} FROM delivery_jobs WHERE state = 'queued' AND due_at <= :due_at{$eligibility} ORDER BY due_at ASC, id ASC LIMIT {$limit}",
             );
             $statement->execute(['due_at' => $timestamp]);
             $rows = $statement->fetchAll(PDO::FETCH_ASSOC);

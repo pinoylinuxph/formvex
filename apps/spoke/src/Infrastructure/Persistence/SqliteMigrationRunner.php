@@ -23,6 +23,7 @@ use Formvex\Spoke\Migrations\Version000013CreateRetentionAndCleanup;
 use Formvex\Spoke\Migrations\Version000014AddRetentionSuccessHeartbeat;
 use Formvex\Spoke\Migrations\Version000015CreateStorageAllowanceAndExports;
 use Formvex\Spoke\Migrations\Version000016CreateBackupInventory;
+use Formvex\Spoke\Migrations\Version000017CreateDeliveryControl;
 use PDO;
 use Throwable;
 
@@ -46,6 +47,7 @@ final readonly class SqliteMigrationRunner
         private ?Version000014AddRetentionSuccessHeartbeat $retentionSuccessHeartbeatMigration = null,
         private ?Version000015CreateStorageAllowanceAndExports $storageAllowanceMigration = null,
         private ?Version000016CreateBackupInventory $backupInventoryMigration = null,
+        private ?Version000017CreateDeliveryControl $deliveryControlMigration = null,
     ) {
     }
 
@@ -90,6 +92,9 @@ final readonly class SqliteMigrationRunner
             }
             if ($this->backupInventoryMigration !== null) {
                 $migrations[] = $this->backupInventoryMigration;
+            }
+            if ($this->deliveryControlMigration !== null) {
+                $migrations[] = $this->deliveryControlMigration;
             }
             $knownVersions = array_map(
                 static fn (Migration $migration): string => $migration->version(),

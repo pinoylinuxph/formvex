@@ -8,6 +8,7 @@ use Formvex\Spoke\Application\Backup\BackupService;
 use Formvex\Spoke\Console\BootstrapAdministratorCommand;
 use Formvex\Spoke\Console\InstallCommand;
 use Formvex\Spoke\Domain\Backup\BackupKind;
+use Formvex\Spoke\Infrastructure\Security\AdminActionTokenManager;
 use Formvex\Spoke\Kernel;
 use PDO;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -512,8 +513,7 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertStringNotContainsString('visitor-secret', (string) $detail->getContent());
         self::assertStringNotContainsString('owner@example.com', (string) $detail->getContent());
         self::assertStringContainsString('Queue resend', (string) $detail->getContent());
-        preg_match('/action="\/formvex\/delivery\/[^\"]+\/resend".*?name="action_token" value="([^\"]+)"/s', (string) $detail->getContent(), $matches);
-        $actionToken = $matches[1] ?? '';
+        $actionToken = self::getContainer()->get(AdminActionTokenManager::class)->issue('delivery_resend', $deliveryId);
         self::assertNotSame('', $actionToken);
 
         $boundToAnotherResource = $this->request('POST', '/formvex/delivery/99999999-9999-4999-8999-999999999999/resend', [
@@ -546,6 +546,62 @@ final class AdministratorHttpTest extends KernelTestCase
         self::assertStringContainsString('The SMTP server accepted this message.', (string) $sentDetail->getContent());
         self::assertStringNotContainsString('Inbox', (string) $sentDetail->getContent());
         self::assertStringNotContainsString('Delivered', (string) $sentDetail->getContent());
+    }
+
+    public function testAdministratorCanPauseAndResumeContactDelivery(): void
+    {
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $cookies = ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf];
+
+        $running = $this->request('GET', '/formvex/delivery', [], $cookies);
+        self::assertSame(Response::HTTP_OK, $running->getStatusCode());
+        self::assertStringContainsString('Contact delivery control', (string) $running->getContent());
+        self::assertStringContainsString('Running', (string) $running->getContent());
+        self::assertStringContainsString('/formvex/delivery/pause', (string) $running->getContent());
+
+        $paused = $this->request('POST', '/formvex/delivery/pause', ['_token' => $csrf, 'confirm' => '1'], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $paused->getStatusCode());
+        self::assertStringContainsString('notice=delivery_paused', (string) $paused->headers->get('Location'));
+
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        self::assertSame('paused', $connection->query('SELECT state FROM delivery_control WHERE singleton_id = 1')->fetchColumn());
+        self::assertSame('spoke.delivery_paused', $connection->query("SELECT event_name FROM audit_events WHERE event_name = 'spoke.delivery_paused'")->fetchColumn());
+
+        $pausedPage = $this->request('GET', '/formvex/delivery', [], $cookies);
+        self::assertStringContainsString('Paused', (string) $pausedPage->getContent());
+        self::assertStringContainsString('/formvex/delivery/resume', (string) $pausedPage->getContent());
+        self::assertStringContainsString('Valid visitor submissions can still be accepted', (string) $pausedPage->getContent());
+
+        $overview = $this->request('GET', '/formvex', [], $cookies);
+        self::assertStringContainsString('Contact delivery is paused.', (string) $overview->getContent());
+        self::assertStringNotContainsString($this->temporaryRoot, (string) $overview->getContent());
+
+        $resumed = $this->request('POST', '/formvex/delivery/resume', ['_token' => $csrf, 'confirm' => '1'], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $resumed->getStatusCode());
+        self::assertStringContainsString('notice=delivery_resumed', (string) $resumed->headers->get('Location'));
+        self::assertSame('running', $connection->query('SELECT state FROM delivery_control WHERE singleton_id = 1')->fetchColumn());
+        self::assertSame(1, (int) $connection->query("SELECT COUNT(*) FROM audit_events WHERE event_name = 'spoke.delivery_resumed'")->fetchColumn());
+    }
+
+    public function testManualResendIsBlockedWhileContactDeliveryIsPaused(): void
+    {
+        $this->seedDelivery();
+        $deliveryId = '33333333-3333-4333-8333-333333333333';
+        [$session, $csrf] = $this->authenticateAdministrator();
+        $cookies = ['formvex_session' => $session, 'formvex_admin_csrf' => $csrf];
+        $connection = new PDO('sqlite:' . $this->temporaryRoot . '/formvex/database/formvex.sqlite');
+        $connection->exec("UPDATE delivery_control SET state = 'paused', changed_at = '2026-10-04T10:00:00.000000Z', changed_by = 'admin' WHERE singleton_id = 1");
+
+        $detail = $this->request('GET', '/formvex/delivery/' . $deliveryId, [], $cookies);
+        self::assertSame(Response::HTTP_OK, $detail->getStatusCode());
+        self::assertStringContainsString('Contact delivery is paused. Resume contact delivery before queueing a manual resend.', (string) $detail->getContent());
+        self::assertStringNotContainsString('Queue resend', (string) $detail->getContent());
+
+        $actionToken = self::getContainer()->get(AdminActionTokenManager::class)->issue('delivery_resend', $deliveryId);
+        $resend = $this->request('POST', '/formvex/delivery/' . $deliveryId . '/resend', ['_token' => $csrf, 'action_token' => $actionToken], $cookies);
+        self::assertSame(Response::HTTP_FOUND, $resend->getStatusCode());
+        self::assertStringContainsString('notice=delivery_paused', (string) $resend->headers->get('Location'));
+        self::assertSame(1, (int) $connection->query('SELECT COUNT(*) FROM delivery_attempt_cycles WHERE delivery_job_id = 2')->fetchColumn());
     }
 
     public function testAdministratorCanSaveBrandingAndItAppearsOnAuthAndPortalSurfaces(): void

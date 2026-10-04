@@ -35,6 +35,24 @@
         </section>
     {% endif %}
 
+    {% if deliveryControl is not null %}
+        <section class="fv-panel fv-delivery-control" aria-labelledby="delivery-control-heading">
+            <div class="fv-section-heading fv-section-heading-inline">
+                <div>
+                    <p class="fv-eyebrow">Contact delivery control</p>
+                    <h2 id="delivery-control-heading">{{ deliveryControl.label() }}</h2>
+                    <p>{{ deliveryControl.explanation() }}</p>
+                </div>
+                <span class="fv-status-badge fv-status-badge-{{ deliveryControl.isPaused() ? 'warning' : 'success' }}">{{ deliveryControl.label() }}</span>
+            </div>
+            <form method="post" action="{{ path(deliveryControl.isPaused() ? 'spoke_admin_delivery_resume' : 'spoke_admin_delivery_pause') }}" class="fv-confirm-action">
+                <input type="hidden" name="_token" value="{{ csrfToken }}">
+                <label><input type="checkbox" name="confirm" value="1" required> I understand this changes contact-message delivery only.</label>
+                <button class="fv-button fv-button-{{ deliveryControl.isPaused() ? 'primary' : 'secondary' }}" type="submit">{{ deliveryControl.isPaused() ? 'Resume delivery' : 'Pause delivery' }}</button>
+            </form>
+        </section>
+    {% endif %}
+
     <form class="fv-filter-bar" method="get" action="{{ path('spoke_admin_delivery') }}">
         <div class="fv-filter-field">
             <label for="delivery-state">State</label>

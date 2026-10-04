@@ -13,6 +13,7 @@ use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
 use Formvex\Spoke\Domain\Backup\Contract\RecoveryHoldStore;
 use Formvex\Spoke\Domain\Delivery\ClaimedDeliveryJob;
 use Formvex\Spoke\Domain\Delivery\ClaimedOperationalAlert;
+use Formvex\Spoke\Domain\Delivery\Contract\DeliveryControlRepository;
 use Formvex\Spoke\Domain\Delivery\Contract\DeliveryJobRepository;
 use Formvex\Spoke\Domain\Delivery\Contract\DeliveryPacingStore;
 use Formvex\Spoke\Domain\Delivery\Contract\MailTransport;
@@ -46,6 +47,7 @@ final readonly class RunDeliveryWorkerHandler
         private ?RecoveryHoldStore $recoveryHoldStore = null,
         private ?UpgradeMaintenanceStore $upgradeMaintenanceStore = null,
         private ?UpgradeInFlightTracker $inFlightTracker = null,
+        private ?DeliveryControlRepository $deliveryControl = null,
     ) {
     }
 
@@ -70,6 +72,7 @@ final readonly class RunDeliveryWorkerHandler
                 return new DeliveryWorkerResult(0, 0, 0, 0, 0, 1, false);
             }
             $settings = $this->settingsStore->get($paths);
+            $deliveryPaused = $this->deliveryControl?->status($paths)->isPaused() ?? false;
 
             $alertPending = $this->alerts->hasDueAlert($paths, $this->clock->now());
             if ($alertPending) {
@@ -114,6 +117,9 @@ final readonly class RunDeliveryWorkerHandler
                 $jobs = $this->jobs->claimDueJobs($paths, $now, 1, $leaseToken, $now->add(new DateInterval('PT' . self::LEASE_SECONDS . 'S')));
 
                 if ($jobs === []) {
+                    if ($deliveryPaused) {
+                        $deferred++;
+                    }
                     break;
                 }
 

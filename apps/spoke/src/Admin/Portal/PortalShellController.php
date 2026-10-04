@@ -8,6 +8,7 @@ use DateTimeZone;
 use Formvex\Spoke\Admin\AuthenticationRequestResolver;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
 use Formvex\Spoke\Application\Backup\BackupService;
+use Formvex\Spoke\Application\Delivery\DeliveryControlService;
 use Formvex\Spoke\Application\InstallationSettings\InstallationSettingsService;
 use Formvex\Spoke\Application\Overview\AdministratorOverviewService;
 use Formvex\Spoke\Domain\Administration\Contract\SpokeStorageResolver;
@@ -42,6 +43,7 @@ final class PortalShellController extends AbstractController
         private readonly Clock $clock,
         private readonly BackupService $backupService,
         private readonly RecoveryHoldStore $recoveryHoldStore,
+        private readonly DeliveryControlService $deliveryControlService,
     ) {
     }
 
@@ -130,8 +132,14 @@ final class PortalShellController extends AbstractController
         $backupArchives = [];
         $backupError = null;
         $recoveryHold = null;
+        $deliveryControl = null;
         if ($destination === 'overview') {
             $overview = $this->overviewService->summary($this->runtimeConfiguration->applicationRoot);
+            try {
+                $deliveryControl = $this->deliveryControlService->status($this->runtimeConfiguration->applicationRoot);
+            } catch (Throwable) {
+                // Overview keeps an explicit status projection without hiding the rest of the page when this source is unavailable.
+            }
             try {
                 $settingsSnapshot = $this->installationSettingsService->snapshot($this->runtimeConfiguration->applicationRoot);
             } catch (Throwable) {
@@ -176,6 +184,7 @@ final class PortalShellController extends AbstractController
             'backupPagination' => $backupPagination,
             'backupError' => $backupError,
             'recoveryHold' => $recoveryHold,
+            'deliveryControl' => $deliveryControl,
             'notice' => $notice !== '' ? $notice : ($error !== '' ? $error : null),
             'noticeVariant' => $error !== '' ? 'danger' : 'information',
         ]);

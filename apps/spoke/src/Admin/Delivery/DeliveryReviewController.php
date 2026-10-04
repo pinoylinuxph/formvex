@@ -7,6 +7,7 @@ namespace Formvex\Spoke\Admin\Delivery;
 use Formvex\Spoke\Admin\Portal\PortalNavigation;
 use Formvex\Spoke\Admin\Portal\PortalPreferences;
 use Formvex\Spoke\Application\Administration\LocalAdministratorService;
+use Formvex\Spoke\Application\Delivery\DeliveryControlService;
 use Formvex\Spoke\Application\DeliveryReview\DeliveryReviewService;
 use Formvex\Spoke\Application\FormConfiguration\FormConfigurationService;
 use Formvex\Spoke\Domain\Administration\Exception\AdministratorFailure;
@@ -31,6 +32,7 @@ final class DeliveryReviewController extends AbstractController
     public function __construct(
         private readonly LocalAdministratorService $administratorService,
         private readonly DeliveryReviewService $reviewService,
+        private readonly DeliveryControlService $controlService,
         private readonly FormConfigurationService $formConfigurationService,
         private readonly AdminActionTokenManager $actionTokenManager,
         private readonly SpokeRuntimeConfiguration $runtimeConfiguration,
@@ -57,18 +59,20 @@ final class DeliveryReviewController extends AbstractController
                 'query' => $query,
                 'result' => $result,
                 'forms' => $forms,
+                'deliveryControl' => $this->controlService->status($this->runtimeConfiguration->applicationRoot),
                 'warnings' => $this->reviewService->warnings($this->runtimeConfiguration->applicationRoot),
                 'pagination' => $this->pagination($query, $result->pageCount, $result->total),
                 'pageSizeControl' => $this->pageSizeControl($query),
-                'message' => $query->errors === [] ? null : implode(' ', $query->errors),
-                'messageVariant' => $query->errors === [] ? 'information' : 'warning',
-                'messageTitle' => $query->errors === [] ? 'Delivery' : 'Filter corrected',
+                'message' => $query->errors === [] ? $this->controlNotice($request) : implode(' ', $query->errors),
+                'messageVariant' => $query->errors === [] ? $this->controlNoticeVariant($request) : 'warning',
+                'messageTitle' => $query->errors === [] && $this->controlNotice($request) !== null ? 'Delivery control' : ($query->errors === [] ? 'Delivery' : 'Filter corrected'),
             ]);
         } catch (DeliveryReviewFailure|FormConfigurationFailure $failure) {
             return $this->renderPage($request, 'administration/delivery/index.html.twig', [
                 'query' => $query,
                 'result' => null,
                 'forms' => [],
+                'deliveryControl' => null,
                 'warnings' => [],
                 'pagination' => ['pages' => [], 'previous' => null, 'next' => null],
                 'pageSizeControl' => $this->pageSizeControl($query),
@@ -95,6 +99,7 @@ final class DeliveryReviewController extends AbstractController
 
             return $this->renderPage($request, 'administration/delivery/detail.html.twig', [
                 'details' => $details,
+                'deliveryControl' => $this->controlService->status($this->runtimeConfiguration->applicationRoot),
                 'warnings' => $this->reviewService->warnings($this->runtimeConfiguration->applicationRoot),
                 'actionToken' => $this->actionTokenManager->issue('delivery_resend', $deliveryId),
                 'message' => $this->notice($request->query->get('notice')),
@@ -106,6 +111,7 @@ final class DeliveryReviewController extends AbstractController
 
             return $this->renderPage($request, 'administration/delivery/detail.html.twig', [
                 'details' => null,
+                'deliveryControl' => null,
                 'warnings' => [],
                 'actionToken' => '',
                 'message' => $failure->getMessage(),
@@ -143,6 +149,7 @@ final class DeliveryReviewController extends AbstractController
             $notice = match ($failure->failureCode) {
                 'uncertain_confirmation_required' => 'uncertain_confirmation_required',
                 'resend_limit_reached' => 'resend_limit_reached',
+                'delivery_paused' => 'delivery_paused',
                 'not_eligible' => 'not_eligible',
                 'stale_state' => 'stale_state',
                 'not_found' => 'not_found',
@@ -205,6 +212,12 @@ final class DeliveryReviewController extends AbstractController
         return match (is_string($notice) ? $notice : '') {
             'resend_queued' => 'A new delivery attempt cycle was queued. The delivery worker will process it on its next run.',
             'uncertain_confirmation_required' => 'Confirm that you understand this resend may deliver the same email twice before continuing.',
+            'delivery_paused' => 'Contact delivery is paused. Resume contact delivery before queueing a manual resend.',
+            'delivery_resumed' => 'Contact delivery has resumed. Queued messages will be processed by the delivery worker under the configured attempt limit.',
+            'delivery_already_paused' => 'Contact delivery is already paused. No additional state change was made.',
+            'delivery_already_running' => 'Contact delivery is already running. No additional state change was made.',
+            'delivery_migration_required' => 'Delivery pause and resume are unavailable until the local database migration is applied.',
+            'delivery_transition_failed' => 'The delivery state could not be changed safely. No delivery state or audit record was changed.',
             'resend_limit_reached' => 'Manual resend limit reached. This delivery remains available for review, but no further resend can be queued.',
             'not_eligible' => 'This delivery is not eligible for resend. Review its current state before trying again.',
             'stale_state' => 'This delivery changed before the resend was queued. Reload the page and review its current state.',
@@ -221,6 +234,28 @@ final class DeliveryReviewController extends AbstractController
             return 'success';
         }
         if (in_array($notice, ['security', 'resend_failed'], true)) {
+            return 'danger';
+        }
+
+        return 'warning';
+    }
+
+    private function controlNotice(Request $request): ?string
+    {
+        $notice = $request->query->getString('notice');
+        if ($notice === '') {
+            $notice = $request->query->getString('error');
+        }
+
+        return $this->notice($notice);
+    }
+
+    private function controlNoticeVariant(Request $request): string
+    {
+        if ($request->query->getString('notice') === 'delivery_paused' || $request->query->getString('notice') === 'delivery_resumed') {
+            return 'success';
+        }
+        if ($request->query->getString('error') === 'delivery_transition_failed' || $request->query->getString('error') === 'delivery_migration_required') {
             return 'danger';
         }
 

@@ -97,6 +97,10 @@ services:
         autowire: true
         autoconfigure: true
 
+    Formvex\Spoke\Migrations\Version000017CreateDeliveryControl:
+        autowire: true
+        autoconfigure: true
+
     Formvex\Spoke\Domain\Branding\Contract\BrandingSettingsStore:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoBrandingSettingsStore
 
@@ -115,6 +119,9 @@ services:
 
     Formvex\Spoke\Domain\Delivery\Contract\DeliveryJobRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryJobRepository
+
+    Formvex\Spoke\Domain\Delivery\Contract\DeliveryControlRepository:
+        alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryControlRepository
 
     Formvex\Spoke\Domain\Delivery\Contract\DeliveryReviewRepository:
         alias: Formvex\Spoke\Infrastructure\Persistence\PdoDeliveryReviewRepository

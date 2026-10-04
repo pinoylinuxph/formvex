@@ -109,6 +109,9 @@ final class PdoDeliveryReviewRepository implements DeliveryReviewRepository
 
             $state = is_string($row['state'] ?? null) ? $row['state'] : '';
             $jobId = $this->integer($row['id'] ?? null);
+            if ($this->deliveryPaused($connection)) {
+                $this->reject($connection, $publicId, $timestamp, 'delivery_paused', 'Contact delivery is paused. Resume contact delivery before queueing a manual resend.');
+            }
             $manualCountStatement = $connection->prepare("SELECT COUNT(*) FROM delivery_attempt_cycles WHERE delivery_job_id = :job_id AND origin = 'manual'");
             $manualCountStatement->execute(['job_id' => $jobId]);
             $manualCount = (int) $manualCountStatement->fetchColumn();
@@ -262,8 +265,9 @@ final class PdoDeliveryReviewRepository implements DeliveryReviewRepository
             }
         }
         $state = $this->string($row, 'state');
-        $allowed = in_array($state, ['failed', 'uncertain'], true) && $manualCount < 3;
-        $reason = $allowed ? '' : $this->resendUnavailableReason($state, $manualCount);
+        $paused = $this->deliveryPaused($connection);
+        $allowed = !$paused && in_array($state, ['failed', 'uncertain'], true) && $manualCount < 3;
+        $reason = $allowed ? '' : ($paused ? 'Contact delivery is paused. Resume contact delivery before queueing a manual resend.' : $this->resendUnavailableReason($state, $manualCount));
         [$errorCode, $errorMessage] = $this->safeError($row['last_error_code'] ?? null);
 
         return new DeliveryReviewDetails(
@@ -321,7 +325,7 @@ final class PdoDeliveryReviewRepository implements DeliveryReviewRepository
 
     private function recordRejectedAudit(PDO $connection, string $publicId, string $timestamp, string $code): void
     {
-        if (!in_array($code, ['not_found', 'not_eligible', 'resend_limit_reached', 'uncertain_confirmation_required', 'stale_state'], true)) {
+        if (!in_array($code, ['not_found', 'not_eligible', 'resend_limit_reached', 'uncertain_confirmation_required', 'delivery_paused', 'stale_state'], true)) {
             return;
         }
 
@@ -383,6 +387,8 @@ final class PdoDeliveryReviewRepository implements DeliveryReviewRepository
             'spoke.delivery_review.resend_queued' => 'Manual resend queued',
             'spoke.delivery_review.uncertain_resend_confirmed' => 'Uncertain resend confirmed',
             'spoke.delivery_review.resend_rejected' => 'Resend rejected',
+            'spoke.delivery_paused' => 'Contact delivery paused',
+            'spoke.delivery_resumed' => 'Contact delivery resumed',
             default => 'Delivery review event',
         };
     }
@@ -395,6 +401,7 @@ final class PdoDeliveryReviewRepository implements DeliveryReviewRepository
             'not_eligible' => 'Not eligible',
             'resend_limit_reached' => 'Limit reached',
             'uncertain_confirmation_required' => 'Confirmation required',
+            'delivery_paused' => 'Contact delivery paused',
             'stale_state' => 'State changed',
             default => 'Rejected',
         };
@@ -425,6 +432,18 @@ final class PdoDeliveryReviewRepository implements DeliveryReviewRepository
         }
 
         return null;
+    }
+
+    private function deliveryPaused(PDO $connection): bool
+    {
+        if (!$this->hasTable($connection, 'delivery_control')) {
+            return false;
+        }
+
+        $statement = $connection->query('SELECT state FROM delivery_control WHERE singleton_id = 1');
+        $state = $statement === false ? false : $statement->fetchColumn();
+
+        return $state === 'paused';
     }
 
     private function connection(PrivateStoragePaths $paths): PDO
