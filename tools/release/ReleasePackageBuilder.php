@@ -13,6 +13,9 @@ use ZipArchive;
 
 final class ReleasePackageBuilder
 {
+    private const MINIMUM_SCHEMA_VERSION = '000016';
+    private const CURRENT_SCHEMA_VERSION = '000021';
+
     /**
      * @var list<string>
      */
@@ -158,7 +161,7 @@ final class ReleasePackageBuilder
             'application' => 'formvex-spoke',
             'release_version' => $this->releaseVersion,
             'archive_kind' => 'production_zip',
-            'schema_compatibility' => ['minimum' => '000016', 'maximum' => '000016'],
+            'schema_compatibility' => ['minimum' => self::MINIMUM_SCHEMA_VERSION, 'maximum' => self::CURRENT_SCHEMA_VERSION],
             'supported_php' => ['8.4', '8.5'],
             'supported_browsers' => ['evergreen'],
             'required_extensions' => ['ctype', 'curl', 'iconv', 'mbstring', 'openssl', 'pdo_sqlite', 'sodium', 'zip'],

@@ -22,6 +22,7 @@ use ZipArchive;
 final readonly class ZipBackupArchiveStore implements BackupArchiveStore
 {
     private const FORMAT_VERSION = 1;
+    private const MAX_SUPPORTED_SCHEMA_VERSION = 21;
 
     public function __construct(private string $publicRoot)
     {
@@ -178,7 +179,7 @@ final readonly class ZipBackupArchiveStore implements BackupArchiveStore
     public function restore(PrivateStoragePaths $paths, string $archivePath): void
     {
         $schemaVersion = $this->verify($paths, $archivePath);
-        if (!preg_match('/\A\d{6}\z/', $schemaVersion) || (int) $schemaVersion > 19) {
+        if (!preg_match('/\A\d{6}\z/', $schemaVersion) || (int) $schemaVersion > self::MAX_SUPPORTED_SCHEMA_VERSION) {
             throw new BackupFailure('schema_incompatible', 'The archive schema is newer than this installation can restore.');
         }
         $staging = $paths->temporaryBackups . DIRECTORY_SEPARATOR . 'restore-' . bin2hex(random_bytes(10));

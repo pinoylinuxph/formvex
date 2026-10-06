@@ -9,8 +9,8 @@ composer install --no-interaction
 npm ci
 composer qa --no-interaction
 npm run build
-php tools/release/assemble.php --version=1.0.0 --output=release/formvex-spoke-1.0.0.zip
-php tools/release/verify.php --archive=release/formvex-spoke-1.0.0.zip
+php tools/release/assemble.php --version=1.1.0 --output=release/formvex-spoke-1.1.0.zip
+php tools/release/verify.php --archive=release/formvex-spoke-1.1.0.zip
 ```
 
 The builder creates a production dependency tree with `composer install
@@ -29,7 +29,7 @@ sudo -u formvex env \
   FORMVEX_APPLICATION_ROOT=/home/formvex/app/formvex/var/manual-spoke \
   php8.4 apps/spoke/bin/console formvex:spoke:release:verify \
   --application-root=/home/formvex/app/formvex/var/manual-spoke \
-  --archive=/home/formvex/releases/formvex-spoke-1.0.0.zip
+  --archive=/home/formvex/releases/formvex-spoke-1.1.0.zip
 ```
 
 The verification command is read-only. A failed verification must be fixed
@@ -60,7 +60,7 @@ used by the CLI workflow.
 
 ```bash
 export FORMVEX_ROOT=/home/example/private/formvex
-export FORMVEX_PACKAGE=/home/example/releases/formvex-spoke-1.0.1.zip
+export FORMVEX_PACKAGE=/home/example/releases/formvex-spoke-1.1.0.zip
 export FORMVEX_SHA256=$(cat "$FORMVEX_PACKAGE.sha256" | awk '{print $1}')
 
 env APP_ENV=prod APP_DEBUG=0 \
@@ -107,7 +107,7 @@ its external digest.
 
 ```bash
 export FORMVEX_CHECKPOINT="$FORMVEX_ROOT/backups/pre-upgrade/<archive-id>.zip"
-export FORMVEX_PREVIOUS=/home/example/releases/formvex-spoke-1.0.0.zip
+export FORMVEX_PREVIOUS=/home/example/releases/formvex-spoke-1.0.1.zip
 export FORMVEX_PREVIOUS_SHA256=$(cat "$FORMVEX_PREVIOUS.sha256" | awk '{print $1}')
 
 env APP_ENV=prod APP_DEBUG=0 \

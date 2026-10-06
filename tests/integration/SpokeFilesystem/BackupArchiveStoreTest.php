@@ -30,11 +30,17 @@ final class BackupArchiveStoreTest extends TestCase
         $this->paths = new PrivateStoragePaths($this->root, $this->root . '/database', $this->root . '/secrets', $this->root . '/logs', $this->root . '/exports', $this->root . '/diagnostics', $this->root . '/backups/scheduled', $this->root . '/backups/manual', $this->root . '/backups/temporary', $this->root . '/runtime', $this->root . '/backups/pre-upgrade');
         $connection = new PDO('sqlite:' . $this->paths->databaseFile(), null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         $connection->exec("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-        $connection->exec("INSERT INTO schema_migrations VALUES ('000016', '2026-10-01T00:00:00.000000Z')");
+        $connection->exec("INSERT INTO schema_migrations VALUES ('000021', '2026-10-01T00:00:00.000000Z')");
+        $connection->exec('CREATE TABLE admin_sessions (id INTEGER PRIMARY KEY)');
+        $connection->exec('CREATE TABLE form_qualification_capabilities (id INTEGER PRIMARY KEY)');
+        $connection->exec('CREATE TABLE local_administrators (singleton_id INTEGER PRIMARY KEY, session_invalidation_generation INTEGER NOT NULL)');
+        $connection->exec('INSERT INTO local_administrators VALUES (1, 0)');
+        $connection->exec('CREATE TABLE delivery_jobs (state TEXT NOT NULL, due_at TEXT NOT NULL, lease_token TEXT NULL, lease_expires_at TEXT NULL, last_error_code TEXT NULL, last_outcome TEXT NULL, updated_at TEXT NOT NULL)');
+        $connection->exec('CREATE TABLE audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_name TEXT NOT NULL, outcome TEXT NOT NULL, occurred_at TEXT NOT NULL, resource_type TEXT NULL, metadata_json TEXT NOT NULL)');
         file_put_contents($this->paths->secrets . '/smtp-password-a.php', "<?php return 'private';");
         chmod($this->paths->secrets . '/smtp-password-a.php', 0o600);
         file_put_contents($this->publicRoot . '/branding/logo-1-aaaaaaaaaaaaaaaa.png', 'branding');
-        file_put_contents($this->paths->runtime . '/installation-state.json', '{"installation_id":"test","schema_version":"000016"}');
+        file_put_contents($this->paths->runtime . '/installation-state.json', '{"installation_id":"test","schema_version":"000021"}');
     }
 
     protected function tearDown(): void
@@ -49,7 +55,7 @@ final class BackupArchiveStoreTest extends TestCase
         $artifact = $store->create($this->paths, $id, BackupKind::MANUAL, new DateTimeImmutable('2026-10-01T00:00:00.000000Z', new DateTimeZone('UTC')));
         $archive = $store->archivePath($this->paths, $artifact->storageKey);
 
-        self::assertSame('000016', $store->verify($this->paths, $archive));
+        self::assertSame('000021', $store->verify($this->paths, $archive));
         $zip = new ZipArchive();
         self::assertTrue($zip->open($archive) === true);
         self::assertIsString($zip->getFromName('manifest.json'));
@@ -60,6 +66,40 @@ final class BackupArchiveStoreTest extends TestCase
 
         $this->expectException(BackupFailure::class);
         $store->verify($this->paths, $this->publicRoot . '/branding/logo-1-aaaaaaaaaaaaaaaa.png');
+    }
+
+    public function testRestoresCurrentSchemaAndReconcilesState(): void
+    {
+        $store = new ZipBackupArchiveStore($this->publicRoot);
+        $artifact = $store->create($this->paths, '01a0f744-d824-7576-ac66-c5f492429fd2', BackupKind::MANUAL, new DateTimeImmutable('2026-10-01T00:00:00.000000Z', new DateTimeZone('UTC')));
+
+        $store->restore($this->paths, $store->archivePath($this->paths, $artifact->storageKey));
+
+        $connection = new PDO('sqlite:' . $this->paths->databaseFile(), null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        self::assertSame('000021', $store->currentSchemaVersion($this->paths));
+        self::assertSame('1', (string) $connection->query('SELECT session_invalidation_generation FROM local_administrators WHERE singleton_id = 1')->fetchColumn());
+        self::assertSame('spoke.backup.restore_reconciled', $connection->query('SELECT event_name FROM audit_events ORDER BY id DESC LIMIT 1')->fetchColumn());
+    }
+
+    public function testRejectsSchemaNewerThanCurrentRestoreBoundary(): void
+    {
+        $store = new ZipBackupArchiveStore($this->publicRoot);
+        $artifact = $store->create($this->paths, '01a0f744-d824-7576-ac66-c5f492429fd2', BackupKind::MANUAL, new DateTimeImmutable('2026-10-01T00:00:00.000000Z', new DateTimeZone('UTC')));
+        $archive = $store->archivePath($this->paths, $artifact->storageKey);
+        $futureArchive = $this->paths->manualBackups . '/01a0f744-d824-7576-ac66-c5f492429fd3.zip';
+        self::assertTrue(copy($archive, $futureArchive));
+
+        $zip = new ZipArchive();
+        self::assertTrue($zip->open($futureArchive) === true);
+        $manifest = json_decode((string) $zip->getFromName('manifest.json'), true, 20, JSON_THROW_ON_ERROR);
+        $manifest['schema_version'] = '000022';
+        self::assertTrue($zip->deleteName('manifest.json'));
+        self::assertTrue($zip->addFromString('manifest.json', json_encode($manifest, JSON_THROW_ON_ERROR)));
+        self::assertTrue($zip->close());
+
+        $this->expectException(BackupFailure::class);
+        $this->expectExceptionMessage('newer than this installation can restore');
+        $store->restore($this->paths, $futureArchive);
     }
 
     public function testRejectsTraversalEntryOutsideApprovedArchiveContents(): void

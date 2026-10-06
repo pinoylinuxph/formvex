@@ -9,8 +9,8 @@ require __DIR__ . '/ReleasePackageBuilder.php';
 
 $options = getopt('', ['source::', 'output:', 'version:']);
 $source = is_string($options['source'] ?? null) ? (string) $options['source'] : dirname(__DIR__, 2);
-$output = is_string($options['output'] ?? null) ? (string) $options['output'] : dirname(__DIR__, 2) . '/release/formvex-spoke.zip';
-$version = is_string($options['version'] ?? null) ? (string) $options['version'] : '1.0.0';
+$output = is_string($options['output'] ?? null) ? (string) $options['output'] : dirname(__DIR__, 2) . '/release/formvex-spoke-1.1.0.zip';
+$version = is_string($options['version'] ?? null) ? (string) $options['version'] : '1.1.0';
 
 try {
     $digest = (new ReleasePackageBuilder(realpath($source) ?: $source, $output, $version))->build();
